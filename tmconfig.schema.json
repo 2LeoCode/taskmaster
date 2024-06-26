@@ -36,7 +36,7 @@
           },
           "restartAttempts": {
             "type": "number",
-            "description": "The number of restart attempts (or 0 for infinite attemps) if 'restart' is set to 'on-failure'\nDefault is 0",
+            "description": "The number of restart attempts (or 0 for infinite attemps) if 'restart' is set to 'on-failure'\nDefault is 5",
             "minimum": 0
           },
           "expectedExitStatus": {
@@ -55,22 +55,15 @@
           },
           "stopSignal": {
             "enum": [
-              2,
               "SIGINT",
-              3,
               "SIGQUIT",
-              15,
               "SIGTERM",
-              17,
               "SIGUSR1",
-              18,
               "SIGUSR2",
-              23,
               "SIGSTOP",
-              24,
               "SIGTSTP"
             ],
-            "description": "The signal used to quit a process gracefully\nDefault is 'SIGQUIT'"
+            "description": "The signal used to quit a process gracefully\nDefault is 'SIGSTOP'"
           },
           "stdout": {
             "enum": ["ignore", "inherit", "redirect"],
@@ -94,11 +87,12 @@
           },
           "workingDirectory": {
             "type": "string",
-            "description": "The working directory\nDefault is ./"
+            "description": "The working directory\nDefault is '.'"
           },
           "permissions": {
             "type": ["number", "null"],
-            "description": "The permissions umask to set before launching the program or null\nDefault is null"
+            "description": "The permissions umask to set before launching the program (if negative, don't touch permissions)\nDefault is -1",
+            "maximum": 777
           }
         },
         "required": ["command"],
