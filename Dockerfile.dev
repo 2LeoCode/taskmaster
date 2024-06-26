@@ -1,0 +1,7 @@
+FROM golang:latest
+
+WORKDIR /usr/src/taskmaster
+
+VOLUME . /usr/src/taskmaster
+
+CMD ["sleep", "infinity"]
