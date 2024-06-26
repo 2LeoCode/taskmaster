@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TMConfig",
+  "description": "TaskMaster configuration file",
+  "type": "object",
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "description": "The tasks to be executed",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The executable to run"
+          },
+          "arguments": {
+            "type": "array",
+            "description": "The arguments to pass to the executable\nDefault is []",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startAtLaunch": {
+            "type": "boolean",
+            "description": "Wether or not to start the process(es) at launch\nDefault is true"
+          },
+          "instances": {
+            "type": "number",
+            "description": "The number of instances of the process to run\nDefault is 1",
+            "minimum": 1
+          },
+          "restart": {
+            "enum": ["always", "never", "on-failure", "unless-stopped"],
+            "description": "'always': always restart the process if it exits\n'never': never restart the process\n'on-failure': restart if the process exits with an error code\n'unless-stopped': restart the process except if the user stops it manually through the console\nDefault is 'on-failure'"
+          },
+          "restartAttempts": {
+            "type": "number",
+            "description": "The number of restart attempts (or 0 for infinite attemps) if 'restart' is set to 'on-failure'\nDefault is 0",
+            "minimum": 0
+          },
+          "expectedExitStatus": {
+            "type": "number",
+            "description": "The expected success exit status code for the process(es)\nDefault is 0"
+          },
+          "startTime": {
+            "type": "number",
+            "description": "The time to wait (in milliseconds) before considering that a process is sucessfuly started\nDefault is 0",
+            "minimum": 0
+          },
+          "stopTime": {
+            "type": "number",
+            "description": "The time to wait (in milliseconds) after a graceful stop before killing a process\nDefault is 5000",
+            "minimum": 0
+          },
+          "stopSignal": {
+            "enum": [
+              2,
+              "SIGINT",
+              3,
+              "SIGQUIT",
+              15,
+              "SIGTERM",
+              17,
+              "SIGUSR1",
+              18,
+              "SIGUSR2",
+              23,
+              "SIGSTOP",
+              24,
+              "SIGTSTP"
+            ],
+            "description": "The signal used to quit a process gracefully\nDefault is 'SIGQUIT'"
+          },
+          "stdout": {
+            "enum": ["ignore", "inherit", "redirect"],
+            "description": "'ignore': ignore stdout\n'inherit': show stdout on taskmaster console\n'redirect': redirect stdout to a log file\nDefault is 'redirect'"
+          },
+          "stderr": {
+            "enum": ["ignore", "inherit", "redirect"],
+            "description": "'ignore': ignore stderr\n'inherit': show stderr on taskmaster console\n'redirect': redirect stderr to a log file\nDefault is 'redirect'"
+          },
+          "logDir": {
+            "type": "string",
+            "description": "The path in which to save output log files\nDefault is /var/log/taskmaster"
+          },
+          "environment": {
+            "type": "object",
+            "description": "Variables to pass as environment to the process(es)\nDefault is {}",
+            "required": [],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "workingDirectory": {
+            "type": "string",
+            "description": "The working directory\nDefault is ./"
+          },
+          "permissions": {
+            "type": ["number", "null"],
+            "description": "The permissions umask to set before launching the program or null\nDefault is null"
+          }
+        },
+        "required": ["command"],
+        "additionalProperties": false
+      },
+      "additionalItems": false
+    }
+  }
+}
