@@ -7,7 +7,7 @@
       "environment": {
         "HELLO": "Hello world!"
       },
-      "stdout": "inherit"
+      "stdout": "ignore"
     }
   ]
 }

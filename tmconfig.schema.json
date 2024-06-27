@@ -91,7 +91,7 @@
           },
           "permissions": {
             "type": ["number", "null"],
-            "description": "The permissions umask to set before launching the program (if negative, don't touch permissions)\nDefault is -1",
+            "description": "The permissions umask to set before launching the program, or null to leave the permissions as they are\nDefault is null",
             "maximum": 777
           }
         },
