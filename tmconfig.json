@@ -2,6 +2,7 @@
   "$schema": "./tmconfig.schema.json",
   "tasks": [
     {
+      "name": "hello-world",
       "command": "bash",
       "arguments": ["-c", "echo $HELLO"],
       "environment": {

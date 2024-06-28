@@ -1,0 +1,10 @@
+{
+  "$schema": "../../tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "invalid-type2",
+      "command": "hello",
+      "startAtLaunch": 0
+    }
+  ]
+}

@@ -10,12 +10,18 @@
       "items": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "The name of the task"
+          },
           "command": {
             "type": "string",
             "description": "The executable to run"
           },
           "arguments": {
             "type": "array",
+            "default": [],
             "description": "The arguments to pass to the executable\nDefault is []",
             "items": {
               "type": "string"
@@ -23,33 +29,34 @@
           },
           "startAtLaunch": {
             "type": "boolean",
+            "default": true,
             "description": "Wether or not to start the process(es) at launch\nDefault is true"
           },
           "instances": {
             "type": "number",
+            "default": 1,
             "description": "The number of instances of the process to run\nDefault is 1",
             "minimum": 1
           },
           "restart": {
             "enum": ["always", "never", "on-failure", "unless-stopped"],
+            "default": "on-failure",
             "description": "'always': always restart the process if it exits\n'never': never restart the process\n'on-failure': restart if the process exits with an error code\n'unless-stopped': restart the process except if the user stops it manually through the console\nDefault is 'on-failure'"
-          },
-          "restartAttempts": {
-            "type": "number",
-            "description": "The number of restart attempts (or 0 for infinite attemps) if 'restart' is set to 'on-failure'\nDefault is 5",
-            "minimum": 0
           },
           "expectedExitStatus": {
             "type": "number",
+            "default": 0,
             "description": "The expected success exit status code for the process(es)\nDefault is 0"
           },
           "startTime": {
             "type": "number",
+            "default": 0,
             "description": "The time to wait (in milliseconds) before considering that a process is sucessfuly started\nDefault is 0",
             "minimum": 0
           },
           "stopTime": {
             "type": "number",
+            "default": 5000,
             "description": "The time to wait (in milliseconds) after a graceful stop before killing a process\nDefault is 5000",
             "minimum": 0
           },
@@ -63,22 +70,23 @@
               "SIGSTOP",
               "SIGTSTP"
             ],
+            "default": "SIGSTOP",
             "description": "The signal used to quit a process gracefully\nDefault is 'SIGSTOP'"
           },
           "stdout": {
             "enum": ["ignore", "inherit", "redirect"],
+            "default": "redirect",
             "description": "'ignore': ignore stdout\n'inherit': show stdout on taskmaster console\n'redirect': redirect stdout to a log file\nDefault is 'redirect'"
           },
           "stderr": {
             "enum": ["ignore", "inherit", "redirect"],
+            "default": "redirect",
             "description": "'ignore': ignore stderr\n'inherit': show stderr on taskmaster console\n'redirect': redirect stderr to a log file\nDefault is 'redirect'"
           },
-          "logDir": {
-            "type": "string",
-            "description": "The path in which to save output log files\nDefault is /var/log/taskmaster"
-          },
+
           "environment": {
             "type": "object",
+            "default": {},
             "description": "Variables to pass as environment to the process(es)\nDefault is {}",
             "required": [],
             "additionalProperties": {
@@ -87,18 +95,42 @@
           },
           "workingDirectory": {
             "type": "string",
+            "default": ".",
             "description": "The working directory\nDefault is '.'"
           },
           "permissions": {
             "type": ["number", "null"],
+            "default": null,
             "description": "The permissions umask to set before launching the program, or null to leave the permissions as they are\nDefault is null",
             "maximum": 777
           }
         },
-        "required": ["command"],
-        "additionalProperties": false
+        "if": {
+          "properties": {
+            "restart": { "const": "on-failure" }
+          }
+        },
+        "then": {
+          "properties": {
+            "restartAttempts": {
+              "type": "number",
+              "default": 5,
+              "description": "The number of restart attempts (or 0 for infinite attemps) if 'restart' is set to 'on-failure'\nDefault is 5",
+              "minimum": 0
+            }
+          }
+        },
+        "required": ["name", "command"],
+        "unevaluatedProperties": false
       },
-      "additionalItems": false
+      "additionalItems": false,
+      "minItems": 1
+    },
+    "logDir": {
+      "type": "string",
+      "default": "/var/log/taskmaster",
+      "description": "The path in which to save output log files\nDefault is /var/log/taskmaster"
     }
-  }
+  },
+  "required": ["tasks"]
 }

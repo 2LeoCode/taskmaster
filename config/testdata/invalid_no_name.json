@@ -1,0 +1,8 @@
+{
+  "$schema": "../../tmconfig.schema.json",
+  "tasks": [
+    {
+      "command": "ls"
+    }
+  ]
+}

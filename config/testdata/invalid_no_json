@@ -1,0 +1,6 @@
+{
+  "tasks": [
+    "name": "invalid-no-json",
+    "command": "ls",
+  ]
+}

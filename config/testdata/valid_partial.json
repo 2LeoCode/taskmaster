@@ -1,0 +1,9 @@
+{
+  "$schema": "../../tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "valid-partial",
+      "command": "ls"
+    }
+  ]
+}

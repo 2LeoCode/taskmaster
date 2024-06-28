@@ -1,0 +1,14 @@
+{
+  "$schema": "../../tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "invalid-type2",
+      "command": "hello",
+      "startAtLaunch": true,
+      "restart": "always",
+      "instances": 10,
+      "stopSignal": {}
+    }
+  ],
+  "logDir": "/tmp/foobar"
+}

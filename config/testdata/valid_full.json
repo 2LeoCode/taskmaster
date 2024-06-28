@@ -1,0 +1,26 @@
+{
+  "$schema": "../../tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "valid-full",
+      "command": "bash",
+      "arguments": ["-c", "echo $WELCOME"],
+      "startAtLaunch": false,
+      "instances": 42,
+      "restart": "on-failure",
+      "restartAttempts": 42,
+      "expectedExitStatus": 42,
+      "startTime": 42,
+      "stopTime": 42,
+      "stopSignal": "SIGTERM",
+      "stdout": "inherit",
+      "stderr": "inherit",
+      "environment": {
+        "WELCOME": "Hello world!"
+      },
+      "permissions": 777,
+      "workingDirectory": "/tmp"
+    }
+  ],
+  "logDir": "/tmp/taskmaster-logs"
+}

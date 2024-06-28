@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type ParseError struct {
@@ -19,8 +20,13 @@ func NewParseError(cause string) ParseError {
 }
 
 func Parse(path string) (*Config, error) {
+	if !strings.HasSuffix(path, ".json") {
+		return nil, NewParseError("Invalid config file format (expected a json file)")
+	}
+
 	config := Config{
-		Tasks: []Task{},
+		Tasks:  []Task{},
+		LogDir: "/var/log/taskmaster",
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -32,6 +38,10 @@ func Parse(path string) (*Config, error) {
 
 	if len(config.Tasks) == 0 {
 		return nil, NewParseError("No task to run")
+	}
+
+	if err := os.MkdirAll(config.LogDir, os.ModePerm); err != nil {
+		return nil, NewParseError(fmt.Sprintf("Failed to open log directory (%s)", err))
 	}
 
 	return &config, nil
