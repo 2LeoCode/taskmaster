@@ -10,27 +10,19 @@ func Map[T, U any](slice []T, mapFunction func(int, *T) U) []U {
 }
 
 func GoMap[T, U any](slice []T, mapFunction func(int, *T) U) []U {
-	pipe := make(chan goMapResult[U])
+	pipe := make(chan Pair[int, U], len(slice))
 	for i, value := range slice {
 		i := i
 		value := value
 		go func() {
-			pipe <- goMapResult[U]{i, mapFunction(i, &value)}
+			pipe <- NewPair(i, mapFunction(i, &value))
 		}()
 	}
-	processed := 0
 
 	result := make([]U, len(slice))
-	for processed != len(slice) {
-		select {
-		case value := <-pipe:
-			result[value.Idx] = value.Result
-		}
+	for range result {
+		value := <-pipe
+		result[value.First] = value.Second
 	}
 	return result
-}
-
-type goMapResult[T any] struct {
-	Idx    int
-	Result T
 }
