@@ -2,23 +2,23 @@ package requests
 
 type RestartProcessRequest interface {
 	Request
-	restartProcess()
+	restartProcessTag()
 	Id() string
 }
 
-type _restartProcessRequest struct {
-	_request
+type restartProcessRequest struct {
+	request
 	id string
 }
 
-func (*_restartProcessRequest) restartProcess() {}
+func (*restartProcessRequest) restartProcessTag()
 
-func (this *_restartProcessRequest) Id() string {
+func (this *restartProcessRequest) Id() string {
 	return this.id
 }
 
 func NewRestartProcessRequest(id string) RestartProcessRequest {
-	return &_restartProcessRequest{
+	return &restartProcessRequest{
 		id: id,
 	}
 }

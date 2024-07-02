@@ -2,13 +2,13 @@ package requests
 
 type StatusRequest interface {
 	Request
-	status()
+	statusTag()
 }
 
-type _statusRequest struct{ _request }
+type statusRequest struct{ request }
 
-func (*_statusRequest) status() {}
+func (*statusRequest) statusTag()
 
 func NewStatusRequest() StatusRequest {
-	return &_statusRequest{}
+	return &statusRequest{}
 }

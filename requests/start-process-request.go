@@ -2,23 +2,21 @@ package requests
 
 type StartProcessRequest interface {
 	Request
-	startProcess()
+	startProcessTag()
 	Id() string
 }
 
-type _startProcessRequest struct {
-	_request
+type startProcessRequest struct {
+	request
 	id string
 }
 
-func (*_startProcessRequest) startProcess() {}
+func (*startProcessRequest) startProcessTag() {}
 
-func (this *_startProcessRequest) Id() string {
+func (this *startProcessRequest) Id() string {
 	return this.id
 }
 
 func NewStartProcessRequest(id string) StartProcessRequest {
-	return &_startProcessRequest{
-		id: id,
-	}
+	return &startProcessRequest{id: id}
 }

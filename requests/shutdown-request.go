@@ -2,13 +2,13 @@ package requests
 
 type ShutdownRequest interface {
 	Request
-	shutdown()
+	shutdownTag()
 }
 
-type _shutdownRequest struct{ _request }
+type shutdownRequest struct{ request }
 
-func (*_shutdownRequest) shutdown() {}
+func (*shutdownRequest) shutdownTag()
 
 func NewShutdownRequest() ShutdownRequest {
-	return &_shutdownRequest{}
+	return &shutdownRequest{}
 }

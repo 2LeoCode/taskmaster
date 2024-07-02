@@ -2,47 +2,47 @@ package requests
 
 type StartProcessResponse interface {
 	Response
-	startProcess()
+	startProcessTag()
 }
 
 type StartProcessSuccesResponse interface {
 	StartProcessResponse
-	success()
+	successTag()
 }
 
 type StartProcessFailureResponse interface {
 	StartProcessResponse
-	failure()
+	failureTag()
 	Reason() string
 }
 
-type _startProcessResponse struct {
-	_response
+type startProcessResponse struct {
+	response
 }
 
-func (*_startProcessResponse) startProcess() {}
+func (*startProcessResponse) startProcessTag()
 
-type _startProcessSuccessResponse struct {
-	_startProcessResponse
+type startProcessSuccessResponse struct {
+	startProcessResponse
 }
 
-func (*_startProcessSuccessResponse) success() {}
+func (*startProcessSuccessResponse) successTag()
 
-type _startProcessFailureResponse struct {
-	_startProcessResponse
+type startProcessFailureResponse struct {
+	startProcessResponse
 	reason string
 }
 
-func (*_startProcessFailureResponse) failure() {}
+func (*startProcessFailureResponse) failureTag()
 
-func (this *_startProcessFailureResponse) Reason() string {
+func (this *startProcessFailureResponse) Reason() string {
 	return this.reason
 }
 
 func NewStartProcessSuccessResponse() StartProcessSuccesResponse {
-	return &_startProcessSuccessResponse{}
+	return &startProcessSuccessResponse{}
 }
 
 func NewStartProcessFailureResponse(reason string) StartProcessFailureResponse {
-	return &_startProcessFailureResponse{reason: reason}
+	return &startProcessFailureResponse{reason: reason}
 }

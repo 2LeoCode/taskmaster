@@ -1,9 +1,9 @@
 package requests
 
 type Response interface {
-	response()
+	responseTag()
 }
 
-type _response struct{}
+type response struct{}
 
-func (*_response) response() {}
+func (*response) responseTag()

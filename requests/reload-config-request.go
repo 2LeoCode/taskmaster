@@ -2,13 +2,13 @@ package requests
 
 type ReloadConfigRequest interface {
 	Request
-	reloadConfig()
+	reloadConfigTag()
 }
 
-type _reloadConfigRequest struct{ _request }
+type reloadConfigRequest struct{ request }
 
-func (*_reloadConfigRequest) reloadConfig() {}
+func (*reloadConfigRequest) reloadConfigTag()
 
 func NewReloadConfigRequest() ReloadConfigRequest {
-	return &_reloadConfigRequest{}
+	return &reloadConfigRequest{}
 }

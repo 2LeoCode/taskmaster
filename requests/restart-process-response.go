@@ -2,47 +2,47 @@ package requests
 
 type RestartProcessResponse interface {
 	Response
-	restartProcess()
+	restartProcessTag()
 }
 
 type RestartProcessSuccesResponse interface {
 	RestartProcessResponse
-	success()
+	successTag()
 }
 
 type RestartProcessFailureResponse interface {
 	RestartProcessResponse
-	failure()
+	failureTag()
 	Reason() string
 }
 
-type _restartProcessResponse struct {
-	_response
+type restartProcessResponse struct {
+	response
 }
 
-func (*_restartProcessResponse) restartProcess() {}
+func (*restartProcessResponse) restartProcessTag()
 
-type _restartProcessSuccessResponse struct {
-	_restartProcessResponse
+type restartProcessSuccessResponse struct {
+	restartProcessResponse
 }
 
-func (*_restartProcessSuccessResponse) success() {}
+func (*restartProcessSuccessResponse) successTag()
 
-type _restartProcessFailureResponse struct {
-	_restartProcessResponse
+type restartProcessFailureResponse struct {
+	restartProcessResponse
 	reason string
 }
 
-func (*_restartProcessFailureResponse) failure() {}
+func (*restartProcessFailureResponse) failureTag()
 
-func (this *_restartProcessFailureResponse) Reason() string {
+func (this *restartProcessFailureResponse) Reason() string {
 	return this.reason
 }
 
 func NewRestartProcessSuccessResponse() RestartProcessSuccesResponse {
-	return &_restartProcessSuccessResponse{}
+	return &restartProcessSuccessResponse{}
 }
 
 func NewRestartProcessFailureResponse(reason string) RestartProcessFailureResponse {
-	return &_restartProcessFailureResponse{reason: reason}
+	return &restartProcessFailureResponse{reason: reason}
 }

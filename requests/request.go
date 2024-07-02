@@ -1,9 +1,9 @@
 package requests
 
 type Request interface {
-	request()
+	requestTag()
 }
 
-type _request struct{}
+type request struct{}
 
-func (*_request) request() {}
+func (*request) requestTag()

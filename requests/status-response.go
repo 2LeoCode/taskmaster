@@ -12,21 +12,21 @@ type TaskStatus struct {
 
 type StatusResponse interface {
 	Response
-	status()
+	statusTag()
 	Tasks() []TaskStatus
 }
 
-type _statusResponse struct {
-	_response
+type statusResponse struct {
+	response
 	tasks []TaskStatus
 }
 
-func (*_statusResponse) status() {}
+func (*statusResponse) statusTag()
 
-func (this *_statusResponse) Tasks() []TaskStatus {
+func (this *statusResponse) Tasks() []TaskStatus {
 	return this.tasks
 }
 
 func NewStatusResponse(tasks []TaskStatus) StatusResponse {
-	return &_statusResponse{tasks: tasks}
+	return &statusResponse{tasks: tasks}
 }

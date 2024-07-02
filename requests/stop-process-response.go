@@ -2,47 +2,47 @@ package requests
 
 type StopProcessResponse interface {
 	Response
-	stopProcess()
+	stopProcessTag()
 }
 
 type StopProcessSuccesResponse interface {
 	StopProcessResponse
-	success()
+	successTag()
 }
 
 type StopProcessFailureResponse interface {
 	StopProcessResponse
-	failure()
+	failureTag()
 	Reason() string
 }
 
-type _stopProcessResponse struct {
-	_response
+type stopProcessResponse struct {
+	response
 }
 
-func (*_stopProcessResponse) stopProcess() {}
+func (*stopProcessResponse) stopProcessTag()
 
-type _stopProcessSuccessResponse struct {
-	_stopProcessResponse
+type stopProcessSuccessResponse struct {
+	stopProcessResponse
 }
 
-func (*_stopProcessSuccessResponse) success() {}
+func (*stopProcessSuccessResponse) successTag()
 
-type _stopProcessFailureResponse struct {
-	_stopProcessResponse
+type stopProcessFailureResponse struct {
+	stopProcessResponse
 	reason string
 }
 
-func (*_stopProcessFailureResponse) failure() {}
+func (*stopProcessFailureResponse) failureTag()
 
-func (this *_stopProcessFailureResponse) Reason() string {
+func (this *stopProcessFailureResponse) Reason() string {
 	return this.reason
 }
 
 func NewStopProcessSuccessResponse() StopProcessSuccesResponse {
-	return &_stopProcessSuccessResponse{}
+	return &stopProcessSuccessResponse{}
 }
 
 func NewStopProcessFailureResponse(reason string) StopProcessFailureResponse {
-	return &_stopProcessFailureResponse{reason: reason}
+	return &stopProcessFailureResponse{reason: reason}
 }

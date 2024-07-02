@@ -2,23 +2,21 @@ package requests
 
 type StopProcessRequest interface {
 	Request
-	stopProcess()
+	stopProcessTag()
 	Id() string
 }
 
-type _stopProcessRequest struct {
-	_request
+type stopProcessRequest struct {
+	request
 	id string
 }
 
-func (*_stopProcessRequest) stopProcess() {}
+func (*stopProcessRequest) stopProcessTag()
 
-func (this *_stopProcessRequest) Id() string {
+func (this *stopProcessRequest) Id() string {
 	return this.id
 }
 
 func NewStopProcessRequest(id string) StopProcessRequest {
-	return &_stopProcessRequest{
-		id: id,
-	}
+	return &stopProcessRequest{id: id}
 }
