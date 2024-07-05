@@ -1,12 +1,12 @@
-package requests
+package responses
 
 type ProcessStatus struct {
-	Id     string
+	Id     uint
 	Status string
 }
 
 type TaskStatus struct {
-	Id        string
+	Id        uint
 	Processes []ProcessStatus
 }
 

@@ -1,4 +1,4 @@
-package requests
+package responses
 
 type ShutdownResponse interface {
 	Response

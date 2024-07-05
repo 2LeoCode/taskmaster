@@ -1,4 +1,4 @@
-package requests
+package responses
 
 import "taskmaster/config"
 
@@ -34,6 +34,21 @@ func NewReloadConfigSuccessResponse(newConfig config.Config) ReloadConfigSuccess
 
 type ReloadConfigFailureResponse interface {
 	ReloadConfigResponse
-	failure()
+	failureTag()
 	Reason() string
+}
+
+type reloadConfigFailureResponse struct {
+	reloadConfigResponse
+	reason string
+}
+
+func (*reloadConfigFailureResponse) failureTag()
+
+func (this *reloadConfigFailureResponse) Reason() string {
+	return this.reason
+}
+
+func NewReloadConfigFailureResponse(reason string) ReloadConfigFailureResponse {
+	return &reloadConfigFailureResponse{reason: reason}
 }

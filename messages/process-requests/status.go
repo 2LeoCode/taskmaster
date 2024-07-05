@@ -1,12 +1,4 @@
-package runner
-
-type ProcessRequest interface {
-	processRequestTag()
-}
-
-type processRequest struct{}
-
-func (*processRequest) processRequestTag()
+package process_requests
 
 type StatusProcessRequest interface {
 	ProcessRequest

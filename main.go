@@ -4,8 +4,9 @@ import (
 	"flag"
 
 	"taskmaster/config"
-	"taskmaster/requests"
-	"taskmaster/runner"
+	"taskmaster/messages/requests"
+	"taskmaster/messages/responses"
+	"taskmaster/runners"
 	"taskmaster/shell"
 	"taskmaster/utils"
 )
@@ -17,7 +18,8 @@ func main() {
 	config := utils.Must(config.Parse(*configPath))
 
 	req := make(chan requests.Request)
-	res := make(chan requests.Response)
-	go runner.StartRunner(*configPath, config, req, res)
+	res := make(chan responses.Response)
+	runner := runners.NewMasterRunner(*configPath, uint(len(config.Tasks)))
+	go runner.Run(config, req, res)
 	shell.StartShell(*config, res, req)
 }

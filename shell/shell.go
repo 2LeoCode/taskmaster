@@ -6,11 +6,12 @@ import (
 	"os"
 	"strings"
 	"taskmaster/config"
-	"taskmaster/requests"
+	"taskmaster/messages/requests"
+	"taskmaster/messages/responses"
 )
 
 type Shell struct {
-	Input  <-chan requests.Response
+	Input  <-chan responses.Response
 	Output chan<- requests.Request
 }
 
@@ -22,7 +23,7 @@ restart <id>: restart a program
 reload: reload configuration file (restart programs only if needed)
 shutdown: stop all processes and taskmaster`
 
-func StartShell(config config.Config, input <-chan requests.Response, output chan<- requests.Request) {
+func StartShell(config config.Config, input <-chan responses.Response, output chan<- requests.Request) {
 	commands := make(chan string)
 	reader := bufio.NewReader(os.Stdin)
 
@@ -70,38 +71,38 @@ func StartShell(config config.Config, input <-chan requests.Response, output cha
 			}
 
 		case res := <-input:
-			if res, ok := res.(requests.StatusResponse); ok {
+			if res, ok := res.(responses.StatusResponse); ok {
 				for i, task := range res.Tasks() {
-					fmt.Printf("%s -- %s\n", task.Id, *config.Tasks[i].Name)
+					fmt.Printf("%d -- %s\n", task.Id, *config.Tasks[i].Name)
 					for _, proc := range task.Processes {
-						fmt.Printf("  %s -- %s\n", proc.Id, proc.Status)
+						fmt.Printf("  %d -- %s\n", proc.Id, proc.Status)
 					}
 				}
-			} else if res, ok := res.(requests.StartProcessResponse); ok {
-				if _, ok := res.(requests.StartProcessSuccesResponse); ok {
+			} else if res, ok := res.(responses.StartProcessResponse); ok {
+				if _, ok := res.(responses.StartProcessSuccesResponse); ok {
 					println("Successfully started program.")
-				} else if failure, ok := res.(requests.StartProcessFailureResponse); ok {
+				} else if failure, ok := res.(responses.StartProcessFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if res, ok := res.(requests.StopProcessResponse); ok {
-				if _, ok := res.(requests.StopProcessSuccesResponse); ok {
+			} else if res, ok := res.(responses.StopProcessResponse); ok {
+				if _, ok := res.(responses.StopProcessSuccesResponse); ok {
 					println("Successfully stopped program.")
-				} else if failure, ok := res.(requests.StopProcessFailureResponse); ok {
+				} else if failure, ok := res.(responses.StopProcessFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if res, ok := res.(requests.RestartProcessResponse); ok {
-				if _, ok := res.(requests.RestartProcessSuccesResponse); ok {
+			} else if res, ok := res.(responses.RestartProcessResponse); ok {
+				if _, ok := res.(responses.RestartProcessSuccesResponse); ok {
 					println("Successfully restarted program.")
-				} else if failure, ok := res.(requests.RestartProcessFailureResponse); ok {
+				} else if failure, ok := res.(responses.RestartProcessFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if res, ok := res.(requests.ReloadConfigResponse); ok {
-				if _, ok := res.(requests.ReloadConfigSuccessResponse); ok {
+			} else if res, ok := res.(responses.ReloadConfigResponse); ok {
+				if _, ok := res.(responses.ReloadConfigSuccessResponse); ok {
 					println("Successfully reloaded configuration.")
-				} else if failure, ok := res.(requests.ReloadConfigFailureResponse); ok {
+				} else if failure, ok := res.(responses.ReloadConfigFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if _, ok := res.(requests.ShutdownResponse); ok {
+			} else if _, ok := res.(responses.ShutdownResponse); ok {
 				return
 			}
 		}

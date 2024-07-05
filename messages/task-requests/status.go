@@ -1,12 +1,4 @@
-package runner
-
-type TaskRequest interface {
-	taskRequestTag()
-}
-
-type taskRequest struct{}
-
-func (*taskRequest) taskRequestTag()
+package task_requests
 
 type StatusTaskRequest interface {
 	TaskRequest
