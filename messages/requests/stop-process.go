@@ -11,7 +11,7 @@ type stopProcessRequest struct {
 	id string
 }
 
-func (*stopProcessRequest) stopProcessTag()
+func (*stopProcessRequest) stopProcessTag() {}
 
 func (this *stopProcessRequest) Id() string {
 	return this.id

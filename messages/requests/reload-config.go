@@ -7,7 +7,7 @@ type ReloadConfigRequest interface {
 
 type reloadConfigRequest struct{ request }
 
-func (*reloadConfigRequest) reloadConfigTag()
+func (*reloadConfigRequest) reloadConfigTag() {}
 
 func NewReloadConfigRequest() ReloadConfigRequest {
 	return &reloadConfigRequest{}

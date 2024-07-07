@@ -10,7 +10,7 @@ type startProcessRequest struct {
 	id uint
 }
 
-func (*startProcessRequest) startTag()
+func (*startProcessRequest) startTag() {}
 
 func NewStartProcessRequest() StartProcessRequest {
 	return &startProcessRequest{}

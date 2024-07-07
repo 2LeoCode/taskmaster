@@ -9,7 +9,7 @@ type ReloadConfigResponse interface {
 
 type reloadConfigResponse struct{ response }
 
-func (*reloadConfigResponse) reloadConfigTag()
+func (*reloadConfigResponse) reloadConfigTag() {}
 
 type ReloadConfigSuccessResponse interface {
 	ReloadConfigResponse
@@ -22,7 +22,7 @@ type reloadConfigSuccessResponse struct {
 	newConfig config.Config
 }
 
-func (*reloadConfigSuccessResponse) successTag()
+func (*reloadConfigSuccessResponse) successTag() {}
 
 func (this *reloadConfigSuccessResponse) NewConfig() config.Config {
 	return this.newConfig
@@ -43,7 +43,7 @@ type reloadConfigFailureResponse struct {
 	reason string
 }
 
-func (*reloadConfigFailureResponse) failureTag()
+func (*reloadConfigFailureResponse) failureTag() {}
 
 func (this *reloadConfigFailureResponse) Reason() string {
 	return this.reason

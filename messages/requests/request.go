@@ -6,4 +6,4 @@ type Request interface {
 
 type request struct{}
 
-func (*request) requestTag()
+func (*request) requestTag() {}

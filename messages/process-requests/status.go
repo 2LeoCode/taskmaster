@@ -9,7 +9,7 @@ type statusProcessRequest struct {
 	processRequest
 }
 
-func (*statusProcessRequest) statusTag()
+func (*statusProcessRequest) statusTag() {}
 
 func NewStatusProcessRequest() StatusProcessRequest {
 	return &statusProcessRequest{}

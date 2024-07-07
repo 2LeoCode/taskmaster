@@ -9,7 +9,7 @@ type exitProcessEvent struct {
 	processEvent
 }
 
-func (*exitProcessEvent) exitTag()
+func (*exitProcessEvent) exitTag() {}
 
 func NewExitProcessEvent() ExitProcessEvent {
 	return &exitProcessEvent{}

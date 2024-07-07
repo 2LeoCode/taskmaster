@@ -6,4 +6,4 @@ type TaskRequest interface {
 
 type taskRequest struct{}
 
-func (*taskRequest) taskRequestTag()
+func (*taskRequest) taskRequestTag() {}

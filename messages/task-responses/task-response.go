@@ -6,4 +6,4 @@ type TaskResponse interface {
 
 type taskResponse struct{}
 
-func (*taskResponse) taskResponseTag()
+func (*taskResponse) taskResponseTag() {}

@@ -9,7 +9,7 @@ type startedProcessEvent struct {
 	processEvent
 }
 
-func (*startedProcessEvent) startedTag()
+func (*startedProcessEvent) startedTag() {}
 
 func NewStartedProcessEvent() StartedProcessEvent {
 	return &startedProcessEvent{}

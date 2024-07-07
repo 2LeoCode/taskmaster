@@ -20,20 +20,20 @@ type stopProcessResponse struct {
 	response
 }
 
-func (*stopProcessResponse) stopProcessTag()
+func (*stopProcessResponse) stopProcessTag() {}
 
 type stopProcessSuccessResponse struct {
 	stopProcessResponse
 }
 
-func (*stopProcessSuccessResponse) successTag()
+func (*stopProcessSuccessResponse) successTag() {}
 
 type stopProcessFailureResponse struct {
 	stopProcessResponse
 	reason string
 }
 
-func (*stopProcessFailureResponse) failureTag()
+func (*stopProcessFailureResponse) failureTag() {}
 
 func (this *stopProcessFailureResponse) Reason() string {
 	return this.reason

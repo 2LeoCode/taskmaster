@@ -33,17 +33,17 @@ func (this *MasterRunner) Run(
 	for i, task := range config.Tasks {
 		this.Tasks[i] = NewTaskRunner(uint(i), task.Instances)
 	}
-	taskInputs := make([]chan task_requests.TaskRequest, len(runner.Tasks))
-	taskOutputs := make([]chan TaskResponse, len(runner.Tasks))
-	agg := make(chan TaskResponse)
-	for i, task := range runner.Tasks {
+	taskInputs := make([]chan task_requests.TaskRequest, len(this.Tasks))
+	taskOutputs := make([]chan task_responses.TaskResponse, len(this.Tasks))
+	agg := make(chan task_responses.TaskResponse)
+	for i, task := range this.Tasks {
 		waitGroup.Add(1)
 		i := i
 
 		go func() {
 			defer waitGroup.Done()
 
-			go task.Run(config, i, taskInputs[i], taskOutputs[i])
+			go task.Run(config, uint(i), taskInputs[i], taskOutputs[i])
 			for msg := range taskOutputs[i] {
 				agg <- msg // forward responses to aggregator channel
 			}
@@ -54,16 +54,16 @@ func (this *MasterRunner) Run(
 		req := <-input
 		if _, ok := req.(requests.StatusRequest); ok {
 			for _, ch := range taskInputs {
-				ch <- NewStatusTaskRequest() // forward to each task
+				ch <- task_requests.NewStatusTaskRequest() // forward to each task
 			}
 
-			res := make([]StatusTaskResponse, len(taskOutputs))
+			res := make([]task_responses.StatusTaskResponse, len(taskOutputs))
 			for i := range taskOutputs {
-				value, _ := (<-agg).(StatusTaskResponse)
+				value, _ := (<-agg).(task_responses.StatusTaskResponse)
 				res[i] = value
 			}
-			output <- requests.NewStatusResponse(utils.Map(
-				res, func(i int, value *StatusTaskResponse) requests.TaskStatus {
+			output <- responses.NewStatusResponse(utils.Map(
+				res, func(i int, value *task_responses.StatusTaskResponse) responses.TaskStatus {
 					return (*value).Status()
 				},
 			))

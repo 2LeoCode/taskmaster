@@ -20,20 +20,20 @@ type restartProcessResponse struct {
 	response
 }
 
-func (*restartProcessResponse) restartProcessTag()
+func (*restartProcessResponse) restartProcessTag() {}
 
 type restartProcessSuccessResponse struct {
 	restartProcessResponse
 }
 
-func (*restartProcessSuccessResponse) successTag()
+func (*restartProcessSuccessResponse) successTag() {}
 
 type restartProcessFailureResponse struct {
 	restartProcessResponse
 	reason string
 }
 
-func (*restartProcessFailureResponse) failureTag()
+func (*restartProcessFailureResponse) failureTag() {}
 
 func (this *restartProcessFailureResponse) Reason() string {
 	return this.reason

@@ -6,4 +6,4 @@ type ProcessResponse interface {
 
 type processResponse struct{}
 
-func (*processResponse) processResponseTag()
+func (*processResponse) processResponseTag() {}

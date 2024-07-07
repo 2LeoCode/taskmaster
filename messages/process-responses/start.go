@@ -2,7 +2,7 @@ package process_responses
 
 type StartProcessResponse interface {
 	ProcessResponse
-	start()
+	startTag()
 	Id() uint
 }
 
@@ -11,7 +11,7 @@ type startProcessResponse struct {
 	id uint
 }
 
-func (*startProcessResponse) start()
+func (*startProcessResponse) startTag() {}
 
 func (this *startProcessResponse) Id() uint {
 	return this.id
@@ -19,12 +19,12 @@ func (this *startProcessResponse) Id() uint {
 
 type StartSuccessProcessResponse interface {
 	StartProcessResponse
-	success()
+	successTag()
 }
 
 type startSuccessProcessResponse struct{ startProcessResponse }
 
-func (*startSuccessProcessResponse) success()
+func (*startSuccessProcessResponse) successTag() {}
 
 func NewStartSuccessProcessResponse() StartSuccessProcessResponse {
 	return &startSuccessProcessResponse{}
@@ -32,7 +32,7 @@ func NewStartSuccessProcessResponse() StartSuccessProcessResponse {
 
 type StartFailureProcessResponse interface {
 	StartProcessResponse
-	failure()
+	failureTag()
 	Reason() string
 }
 
@@ -41,7 +41,7 @@ type startFailureProcessResponse struct {
 	reason string
 }
 
-func (*startFailureProcessResponse) failure()
+func (*startFailureProcessResponse) failureTag() {}
 
 func (this *startFailureProcessResponse) Reason() string {
 	return this.reason

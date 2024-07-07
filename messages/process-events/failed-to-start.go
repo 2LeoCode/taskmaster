@@ -11,7 +11,7 @@ type failedToStartProcessEvent struct {
 	reason string
 }
 
-func (*failedToStartProcessEvent) failedToStartTag()
+func (*failedToStartProcessEvent) failedToStartTag() {}
 
 func (this *failedToStartProcessEvent) Reason() string {
 	return this.reason

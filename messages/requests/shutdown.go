@@ -7,7 +7,7 @@ type ShutdownRequest interface {
 
 type shutdownRequest struct{ request }
 
-func (*shutdownRequest) shutdownTag()
+func (*shutdownRequest) shutdownTag() {}
 
 func NewShutdownRequest() ShutdownRequest {
 	return &shutdownRequest{}

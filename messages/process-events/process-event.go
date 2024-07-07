@@ -6,4 +6,4 @@ type ProcessEvent interface {
 
 type processEvent struct{}
 
-func (*processEvent) processEventTag()
+func (*processEvent) processEventTag() {}

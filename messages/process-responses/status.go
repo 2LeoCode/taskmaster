@@ -13,7 +13,7 @@ type statusProcessResponse struct {
 	status responses.ProcessStatus
 }
 
-func (*statusProcessResponse) statusTag()
+func (*statusProcessResponse) statusTag() {}
 
 func (this *statusProcessResponse) Status() responses.ProcessStatus {
 	return this.status

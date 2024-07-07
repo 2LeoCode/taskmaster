@@ -9,7 +9,7 @@ type statusTaskRequest struct {
 	taskRequest
 }
 
-func (*statusTaskRequest) statusTag()
+func (*statusTaskRequest) statusTag() {}
 
 func NewStatusTaskRequest() StatusTaskRequest {
 	return &statusTaskRequest{}

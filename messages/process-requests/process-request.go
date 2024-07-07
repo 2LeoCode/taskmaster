@@ -6,4 +6,4 @@ type ProcessRequest interface {
 
 type processRequest struct{}
 
-func (*processRequest) processRequestTag()
+func (*processRequest) processRequestTag() {}

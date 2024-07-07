@@ -6,4 +6,4 @@ type Response interface {
 
 type response struct{}
 
-func (*response) responseTag()
+func (*response) responseTag() {}

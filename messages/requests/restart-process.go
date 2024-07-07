@@ -11,7 +11,7 @@ type restartProcessRequest struct {
 	id string
 }
 
-func (*restartProcessRequest) restartProcessTag()
+func (*restartProcessRequest) restartProcessTag() {}
 
 func (this *restartProcessRequest) Id() string {
 	return this.id

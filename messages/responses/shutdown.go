@@ -7,7 +7,7 @@ type ShutdownResponse interface {
 
 type shutdownResponse struct{ response }
 
-func (*shutdownResponse) shutdownTag()
+func (*shutdownResponse) shutdownTag() {}
 
 func NewShutdownResponse() ShutdownResponse {
 	return &shutdownResponse{}

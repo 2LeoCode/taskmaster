@@ -21,7 +21,7 @@ type statusResponse struct {
 	tasks []TaskStatus
 }
 
-func (*statusResponse) statusTag()
+func (*statusResponse) statusTag() {}
 
 func (this *statusResponse) Tasks() []TaskStatus {
 	return this.tasks

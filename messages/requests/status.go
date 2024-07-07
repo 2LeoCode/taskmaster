@@ -7,7 +7,7 @@ type StatusRequest interface {
 
 type statusRequest struct{ request }
 
-func (*statusRequest) statusTag()
+func (*statusRequest) statusTag() {}
 
 func NewStatusRequest() StatusRequest {
 	return &statusRequest{}
