@@ -41,6 +41,8 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 
 	for i, proc := range this.Processes {
 		waitGroup.Add(1)
+		processInputs[i] = make(chan process_requests.ProcessRequest)
+		processOutputs[i] = make(chan process_responses.ProcessResponse)
 		procInput := processInputs[i]
 		procOutput := processOutputs[i]
 

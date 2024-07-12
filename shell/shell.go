@@ -38,7 +38,7 @@ func StartShell(config config.Config, input <-chan responses.Response, output ch
 		select {
 
 		case cmd := <-commands:
-			tokens := strings.Split(cmd, " ")
+			tokens := strings.Fields(cmd)
 			if len(tokens) == 0 {
 				continue
 			}

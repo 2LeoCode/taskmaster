@@ -39,6 +39,8 @@ func (this *MasterRunner) Run(
 	for i, task := range this.Tasks {
 		waitGroup.Add(1)
 		i := i
+		taskInputs[i] = make(chan task_requests.TaskRequest) 
+		taskOutputs[i] = make(chan task_responses.TaskResponse)
 
 		go func() {
 			defer waitGroup.Done()
