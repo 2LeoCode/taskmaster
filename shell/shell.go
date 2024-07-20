@@ -25,13 +25,27 @@ reload: reload configuration file (restart programs only if needed)
 shutdown: stop all processes and taskmaster`
 
 func StartShell(config config.Config, input <-chan responses.Response, output chan<- requests.Request) {
-	commands := make(chan string)
+	commands := make(chan []string)
 	reader := bufio.NewReader(os.Stdin)
 
 	go func() {
 		for {
 			cmd, _ := reader.ReadString('\n')
-			commands <- cmd
+			if len(cmd) != 0 && cmd[len(cmd)-1] == '\n' {
+				// This check is needed because in case of CTRL+D input,
+				// the \n is not included in the returned string
+				cmd = cmd[:len(cmd)-1]
+			}
+			if len(cmd) == 0 {
+				// input is empty, don't send
+				continue
+			}
+			tokens := strings.Split(cmd, " ")
+			if len(tokens) == 1 && len(tokens[0]) == 0 {
+				// string contains only spaces, ignore
+				continue
+			}
+			commands <- tokens
 		}
 	}()
 
@@ -39,41 +53,37 @@ func StartShell(config config.Config, input <-chan responses.Response, output ch
 		select {
 
 		case cmd := <-commands:
-			tokens := strings.Fields(cmd)
-			if len(tokens) == 0 {
-				continue
-			}
-			switch tokens[0] {
+			switch cmd[0] {
 			case "help":
 				println(HELP_MESSAGE)
 			case "status":
 				output <- requests.NewStatusRequest()
 			case "start":
-				if len(tokens) != 3 {
+				if len(cmd) != 3 {
 					println("usage: start <task-id> <process-id>")
 				}
-				taskId, taskIdErr := strconv.ParseUint(tokens[1], 10, 64)
-				processId, processIdErr := strconv.ParseUint(tokens[2], 10, 64)
+				taskId, taskIdErr := strconv.ParseUint(cmd[1], 10, 64)
+				processId, processIdErr := strconv.ParseUint(cmd[2], 10, 64)
 				if taskIdErr != nil || processIdErr != nil {
 					println("Error: task-id and process-id must be valid positive integers")
 				}
 				output <- requests.NewStartProcessRequest(uint(taskId), uint(processId))
 			case "stop":
-				if len(tokens) != 2 {
+				if len(cmd) != 2 {
 					println("usage: stop <id>")
 				}
-				output <- requests.NewStopProcessRequest(tokens[1])
+				output <- requests.NewStopProcessRequest(cmd[1])
 			case "restart":
-				if len(tokens) != 2 {
+				if len(cmd) != 2 {
 					println("usage: restart <id>")
 				}
-				output <- requests.NewRestartProcessRequest(tokens[1])
+				output <- requests.NewRestartProcessRequest(cmd[1])
 			case "reload":
 				output <- requests.NewReloadConfigRequest()
 			case "shutdown":
 				output <- requests.NewShutdownRequest()
 			default:
-				fmt.Printf("invalid command: %s (type `help` to get a list of available commands)", tokens[0])
+				fmt.Printf("invalid command: %s (type `help` to get a list of available commands)\n", cmd[0])
 			}
 
 		case res := <-input:

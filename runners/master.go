@@ -1,7 +1,6 @@
 package runners
 
 import (
-	"fmt"
 	"sync"
 	"taskmaster/config"
 	"taskmaster/messages/requests"
@@ -39,7 +38,7 @@ func (this *MasterRunner) Run(
 	for i, task := range this.Tasks {
 		waitGroup.Add(1)
 		i := i
-		taskInputs[i] = make(chan task_requests.TaskRequest) 
+		taskInputs[i] = make(chan task_requests.TaskRequest)
 		taskOutputs[i] = make(chan task_responses.TaskResponse)
 
 		go func() {
@@ -67,7 +66,7 @@ func (this *MasterRunner) Run(
 			output <- responses.NewStatusResponse(res)
 		} else if start, ok := req.(requests.StartProcessRequest); ok {
 			if start.TaskId() > uint(len(taskInputs)) {
-				output <- responses.NewStartProcessFailureResponse(start.TaskId(), start.ProcessId(), fmt.Sprintf("Invalid task id: %d\n"))
+				output <- responses.NewStartProcessFailureResponse(start.TaskId(), start.ProcessId(), "Invalid task id")
 			} else {
 				taskInputs[start.TaskId()] <- task_requests.NewStartProcessTaskRequest(start.ProcessId())
 				res := <-agg

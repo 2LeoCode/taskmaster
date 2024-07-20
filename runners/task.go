@@ -46,14 +46,12 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 		waitGroup.Add(1)
 		processInputs[i] = make(chan process_requests.ProcessRequest)
 		processOutputs[i] = make(chan process_responses.ProcessResponse)
-		procInput := processInputs[i]
-		procOutput := processOutputs[i]
 
 		go func() {
 			defer waitGroup.Done()
 
-			go proc.Run(config, taskId, procInput, procOutput)
-			for msg := range procOutput {
+			go proc.Run(config, taskId, processInputs[i], processOutputs[i])
+			for msg := range processOutputs[i] {
 				if start, ok := msg.(process_responses.StartProcessResponse); ok {
 					startResponses <- start
 				} else if status, ok := msg.(process_responses.StatusProcessResponse); ok {
