@@ -4,10 +4,11 @@
     {
       "name": "hello-world",
       "command": "bash",
-      "arguments": ["-c", "echo $HELLO"],
+      "arguments": ["-c", "sleep 5; echo $HELLO; sleep 5"],
       "environment": {
         "HELLO": "Hello world!"
       },
+      "startTime": 5000,
       "stdout": "ignore"
     }
   ]

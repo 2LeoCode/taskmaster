@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"taskmaster/config"
 	"taskmaster/messages/requests"
@@ -48,10 +49,15 @@ func StartShell(config config.Config, input <-chan responses.Response, output ch
 			case "status":
 				output <- requests.NewStatusRequest()
 			case "start":
-				if len(tokens) != 2 {
-					println("usage: start <id>")
+				if len(tokens) != 3 {
+					println("usage: start <task-id> <process-id>")
 				}
-				output <- requests.NewStartProcessRequest(tokens[1])
+				taskId, taskIdErr := strconv.ParseUint(tokens[1], 10, 64)
+				processId, processIdErr := strconv.ParseUint(tokens[2], 10, 64)
+				if taskIdErr != nil || processIdErr != nil {
+					println("Error: task-id and process-id must be valid positive integers")
+				}
+				output <- requests.NewStartProcessRequest(uint(taskId), uint(processId))
 			case "stop":
 				if len(tokens) != 2 {
 					println("usage: stop <id>")
@@ -79,10 +85,10 @@ func StartShell(config config.Config, input <-chan responses.Response, output ch
 					}
 				}
 			} else if res, ok := res.(responses.StartProcessResponse); ok {
-				if _, ok := res.(responses.StartProcessSuccesResponse); ok {
-					println("Successfully started program.")
+				if success, ok := res.(responses.StartProcessSuccesResponse); ok {
+					println("Successfully started program %d in task %d.", success.ProcessId(), success.TaskId())
 				} else if failure, ok := res.(responses.StartProcessFailureResponse); ok {
-					println(failure.Reason())
+					println("Failed to start program %d in task %d: %s.", failure.ProcessId(), failure.TaskId(), failure.Reason())
 				}
 			} else if res, ok := res.(responses.StopProcessResponse); ok {
 				if _, ok := res.(responses.StopProcessSuccesResponse); ok {

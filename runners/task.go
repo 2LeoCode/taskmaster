@@ -37,7 +37,10 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 
 	processInputs := make([]chan process_requests.ProcessRequest, len(this.Processes))
 	processOutputs := make([]chan process_responses.ProcessResponse, len(this.Processes))
-	agg := make(chan process_responses.ProcessResponse)
+
+	statusResponses := make(chan process_responses.StatusProcessResponse)
+	startResponses := make(chan process_responses.StartProcessResponse)
+	otherResponses := make(chan process_responses.ProcessResponse)
 
 	for i, proc := range this.Processes {
 		waitGroup.Add(1)
@@ -51,7 +54,13 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 
 			go proc.Run(config, taskId, procInput, procOutput)
 			for msg := range procOutput {
-				agg <- msg // forward responses to aggregator channel
+				if start, ok := msg.(process_responses.StartProcessResponse); ok {
+					startResponses <- start
+				} else if status, ok := msg.(process_responses.StatusProcessResponse); ok {
+					statusResponses <- status
+				} else {
+					otherResponses <- msg // forward responses to aggregator channel
+				}
 			}
 		}()
 	}
@@ -62,8 +71,7 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 		}
 	}
 
-	for {
-		req := <-input
+	for req := range input {
 		if _, ok := req.(task_requests.StatusTaskRequest); ok {
 			for _, ch := range processInputs {
 				ch <- process_requests.NewStatusProcessRequest()
@@ -71,8 +79,7 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 
 			res := make([]process_responses.StatusProcessResponse, len(processOutputs))
 			for i := range processOutputs {
-				value, _ := (<-agg).(process_responses.StatusProcessResponse)
-				res[i] = value
+				res[i] = (<-statusResponses).(process_responses.StatusProcessResponse)
 			}
 			output <- task_responses.NewStatusTaskResponse(
 				responses.TaskStatus{
@@ -85,6 +92,19 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 					),
 				},
 			)
+		} else if req, ok := req.(task_requests.StartProcessTaskRequest); ok {
+			if req.Id() >= uint(len(processInputs)) {
+				output <- task_responses.NewStartProcessFailureTaskResponse(this.TaskId, req.Id(), "Invalid process ID")
+			} else {
+				processInputs[req.Id()] <- process_requests.NewStartProcessRequest()
+				res := <-startResponses
+				if _, ok := res.(process_responses.StartSuccessProcessResponse); ok {
+					output <- task_responses.NewStartProcessSuccessTaskResponse(this.TaskId, res.Id())
+				} else {
+					res := res.(process_responses.StartFailureProcessResponse)
+					output <- task_responses.NewStartProcessFailureTaskResponse(this.TaskId, req.Id(), res.Reason())
+				}
+			}
 		}
 	}
 }

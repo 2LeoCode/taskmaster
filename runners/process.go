@@ -47,7 +47,8 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 		os.ModeAppend.Perm(),
 	)
 	if err != nil {
-		// TODO: Handle error
+		// send InitFailureProcessResponse
+		return
 	}
 	defer stdoutLogFile.Close()
 
@@ -64,6 +65,7 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 	)
 	if err != nil {
 		// send InitFailureProcessResponse
+		return
 	}
 	defer stderrLogFile.Close()
 	// send InitSuccessProcessResponse
@@ -76,6 +78,9 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 		select {
 		case event := <-processEvents:
 			if _, ok := event.(process_events.ExitProcessEvent); ok {
+				if this.StartedTime == nil {
+
+				}
 				this.ExitStatus = new(int)
 				*this.ExitStatus = cmd.ProcessState.ExitCode()
 				this.StoppedTime = new(time.Time)
@@ -84,9 +89,15 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 				if this.ExitStatus == nil {
 					this.StartedTime = new(time.Time)
 					*this.StartedTime = time.Now()
+				} else {
+					// TODO: Handle restart attempts
 				}
-			} else if event, ok := event.(process_events.FailedToStartProcessEvent); ok {
-				output <- process_responses.NewStartFailureProcessResponse(event.Reason())
+			} else if event, ok := event.(process_events.StartProcessEvent); ok {
+				if event, ok := event.(process_events.StartSuccessProcessEvent); ok {
+					output <- process_responses.NewStartSuccessProcessResponse()
+				} else if event, ok := event.(process_events.StartFailureProcessEvent); ok {
+					output <- process_responses.NewStartFailureProcessResponse(event.Reason())
+				}
 			}
 		case req := <-input:
 			if _, ok := req.(process_requests.StatusProcessRequest); ok {
@@ -113,11 +124,16 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 				}
 				output <- process_responses.NewStatusProcessResponse(res)
 			} else if _, ok := req.(process_requests.StartProcessRequest); ok {
+				if this.StartTime != nil {
+					processEvents <- process_events.NewStartFailureProcessEvent("Process already started")
+					break
+				}
 				this.StartTime = new(time.Time)
 				*this.StartTime = time.Now()
 				if err := cmd.Run(); err != nil {
-					processEvents <- process_events.NewFailedToStartProcessEvent(err.Error())
+					processEvents <- process_events.NewStartFailureProcessEvent(err.Error())
 				} else {
+					processEvents <- process_events.NewStartSuccessProcessEvent()
 					go func() {
 						cmd.Wait()
 						processEvents <- process_events.NewExitProcessEvent()
