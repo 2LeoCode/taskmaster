@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"strconv"
 	"bufio"
 	"fmt"
 	"os"
@@ -53,10 +54,22 @@ func StartShell(config config.Config, input <-chan responses.Response, output ch
 				}
 				output <- requests.NewStartProcessRequest(tokens[1])
 			case "stop":
-				if len(tokens) != 2 {
-					println("usage: stop <id>")
+				if len(tokens) != 3 {
+					println("usage: stop <task_id> <process_id>")
+				} else
+				{
+					tid, err := strconv.Atoi(tokens[1])
+					if err != nil || tid < 0 {
+						println("task_id must be a number greater or equal to 0")
+						break
+					}
+					pid, err := strconv.Atoi(tokens[2])
+					if err != nil || pid < 0 {
+						println("process_id must be a number greater or equal to 0")
+						break
+					}
+					output <- requests.NewStopProcessRequest(tid, pid)
 				}
-				output <- requests.NewStopProcessRequest(tokens[1])
 			case "restart":
 				if len(tokens) != 2 {
 					println("usage: restart <id>")
@@ -84,7 +97,8 @@ func StartShell(config config.Config, input <-chan responses.Response, output ch
 				} else if failure, ok := res.(responses.StartProcessFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if res, ok := res.(responses.StopProcessResponse); ok {
+			} 
+			if res, ok := res.(responses.StopProcessResponse); ok {
 				if _, ok := res.(responses.StopProcessSuccesResponse); ok {
 					println("Successfully stopped program.")
 				} else if failure, ok := res.(responses.StopProcessFailureResponse); ok {

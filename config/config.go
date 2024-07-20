@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"taskmaster/utils"
+	"syscall"
 )
 
 type Config struct {
@@ -36,6 +37,13 @@ type Task struct {
 	Permissions        *uint
 }
 
+
+func (this *Task) StopSignalAsInt() os.Signal {
+	if this.StopSignal == "SIGTERM" {
+		return syscall.SIGTERM
+	}
+	return syscall.SIGTERM 
+}
 func (this *Config) String() string {
 	return fmt.Sprintf(
 		"{\n"+
