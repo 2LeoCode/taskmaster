@@ -1,16 +1,16 @@
 package process_requests
 
-type StopProcessRequest interface {
+type StopProcessProcessRequest interface {
 	ProcessRequest
 	stopTag()
 }
 
-type stopProcessRequest struct {
+type stopProcessProcessRequest struct {
 	processRequest
 }
 
-func (*stopProcessRequest) stopTag() {}
+func (*stopProcessProcessRequest) stopTag() {}
 
-func NewStopProcessRequest() StopProcessRequest {
-	return &stopProcessRequest{}
+func NewStopProcessProcessRequest() StopProcessProcessRequest {
+	return &stopProcessProcessRequest{}
 }

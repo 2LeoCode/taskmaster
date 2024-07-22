@@ -85,6 +85,21 @@ func (this *TaskRunner) Run(config *config.Config, taskId uint, input <-chan tas
 					),
 				},
 			)
+		} else if res, ok := req.(task_requests.StopProcessTaskRequest); ok {
+			println("Received stop (task)")
+			if res.Process_id() >= len(processInputs) {
+				output <- task_responses.NewStopProcessFailureTaskResponse("Invalid process ID")
+			} else {
+				processInputs[res.Process_id()] <- process_requests.NewStopProcessProcessRequest()
+				gg := <- processOutputs[res.Process_id()]
+				println("Received info from process")
+				if casted, ok := gg.(process_responses.StopProcessFailureProcessResponse); ok {
+					output <- task_responses.NewStopProcessFailureTaskResponse(casted.Reason())
+				} else {
+					output <- task_responses.NewStopProcessSuccessTaskResponse()
+				}
+
+			}
 		}
 	}
 }

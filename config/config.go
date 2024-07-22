@@ -38,7 +38,7 @@ type Task struct {
 }
 
 
-func (this *Task) StopSignalAsInt() os.Signal {
+func (this *Task) StopSignalAsSignal() os.Signal {
 	if this.StopSignal == "SIGTERM" {
 		return syscall.SIGTERM
 	}

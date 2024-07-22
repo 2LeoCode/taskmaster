@@ -10,6 +10,7 @@ import (
 	"taskmaster/messages/process-responses"
 	"taskmaster/messages/responses"
 	"time"
+	"syscall"
 )
 
 type ProcessRunner struct {
@@ -127,6 +128,26 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 						processEvents <- process_events.NewStartedProcessEvent()
 					}()
 				}
+			} else if _, ok := req.(process_requests.StopProcessProcessRequest); ok {
+				println("Received request (process)")
+
+				syscall.Kill(cmd.Process.Pid, syscall.SIGTERM)
+
+				ch := make(chan process_events.ExitProcessEvent)
+				go func() {
+					cmd.Wait()
+					ch <- process_events.NewExitProcessEvent()
+				}()
+				go func() {
+					select {
+					case <- time.After(time.Duration(taskConfig.StartTime) * time.Millisecond):
+						syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
+					case <- ch:
+						println("Success!!!")
+					}
+					output <- process_responses.NewStopProcessSuccessProcessResponse()
+				}()
+
 			}
 		}
 	}

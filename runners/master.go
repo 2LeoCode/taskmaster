@@ -69,6 +69,21 @@ func (this *MasterRunner) Run(
 					return (*value).Status()
 				},
 			))
+		} else if res, ok := req.(requests.StopProcessRequest); ok {
+			println("Received stop")
+			if res.Task_id() >= len(taskInputs) {
+				output <- responses.NewStopProcessFailureResponse("Invalid Task ID")
+			} else {
+				taskInputs[res.Task_id()] <- task_requests.NewStopProcessTaskRequest(res.Process_id())
+				gg := <- taskOutputs[res.Task_id()]
+				println("Received from task")
+				if casted, ok := gg.(task_responses.StopProcessFailureTaskResponse); ok {
+					output <- responses.NewStopProcessFailureResponse(casted.Reason())
+				} else {
+					output <- responses.NewStopProcessSuccessResponse()
+				}
+
+			}
 		}
 	}
 
