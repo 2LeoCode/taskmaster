@@ -46,9 +46,9 @@ func (this *MasterRunner) Run(
 			defer waitGroup.Done()
 
 			go task.Run(config, uint(i), taskInputs[i], taskOutputs[i])
-			for msg := range taskOutputs[i] {
-				agg <- msg // forward responses to aggregator channel
-			}
+//			for msg := range taskOutputs[i] {
+//				agg <- msg // forward responses to aggregator channel
+//			}
 		}()
 	}
 

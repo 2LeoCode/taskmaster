@@ -1,6 +1,7 @@
 package runners
 
 import (
+	"sync"
 	"fmt"
 	"os"
 	"os/exec"
@@ -134,19 +135,33 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 				syscall.Kill(cmd.Process.Pid, syscall.SIGTERM)
 
 				ch := make(chan process_events.ExitProcessEvent)
+				var wg sync.WaitGroup
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					cmd.Wait()
-					ch <- process_events.NewExitProcessEvent()
+					select {
+					case ch <- process_events.NewExitProcessEvent():
+						println("Sent exit message")
+					default:
+						println("Already killed")
+					}
 				}()
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					select {
 					case <- time.After(time.Duration(taskConfig.StartTime) * time.Millisecond):
+						println("Sending KILL")
 						syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
 					case <- ch:
 						println("Success!!!")
 					}
+					println("Sending response to [task]")
 					output <- process_responses.NewStopProcessSuccessProcessResponse()
 				}()
+				
+				wg.Wait()
 
 			}
 		}
