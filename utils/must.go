@@ -2,9 +2,19 @@ package utils
 
 import "log"
 
-func Must[T any](value T, error error) T {
-	if error != nil {
-		log.Fatalln(error)
+// To use as a wrapper around functions that return
+// a result and error values.
+// Check if `err` is nil, if so, just return the value,
+// otherwise call log.Fatalln(err).
+// Example:
+//
+//	f := utils.Must(os.Open("some_file"))
+//
+// This code will return the file handle if os.Open succeeds,
+// otherwise it will print the returned error, and exit the program.
+func Must[T any](value T, err error) T {
+	if err != nil {
+		log.Fatalln(err)
 	}
 	return value
 }

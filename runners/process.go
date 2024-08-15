@@ -5,15 +5,19 @@ import (
 	"os"
 	"os/exec"
 	"taskmaster/config"
-	"taskmaster/messages/process-events"
-	"taskmaster/messages/process-requests"
-	"taskmaster/messages/process-responses"
-	"taskmaster/messages/responses"
+	"taskmaster/messages/process/input"
+	"taskmaster/messages/process/output"
+	"taskmaster/process-events"
 	"time"
 )
 
 type ProcessRunner struct {
-	ProcId uint
+	Id uint
+
+	Input  chan input.Message
+	Output chan output.Message
+
+	TaskConfig config.Task
 
 	StartTime    *time.Time
 	StartedTime  *time.Time
@@ -26,12 +30,17 @@ type ProcessRunner struct {
 	HasBeenKilled  bool
 }
 
-func NewProcessRunner(id uint) ProcessRunner {
-	return ProcessRunner{ProcId: id}
+func newProcessRunner(id uint, taskConfig *config.Task, input chan input.Message, output chan output.Message) *ProcessRunner {
+	return &ProcessRunner{
+		Id:         id,
+		Input:      input,
+		Output:     output,
+		TaskConfig: *taskConfig,
+	}
 }
 
 func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan process_requests.ProcessRequest, output chan<- process_responses.ProcessResponse) {
-	processEvents := make(chan process_events.ProcessEvent)
+	events := make(chan process_events.ProcessEvent)
 
 	taskConfig := config.Tasks[taskId]
 
@@ -76,7 +85,7 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 
 	for {
 		select {
-		case event := <-processEvents:
+		case event := <-events:
 			if _, ok := event.(process_events.ExitProcessEvent); ok {
 				if this.StartedTime == nil {
 
@@ -125,22 +134,22 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 				output <- process_responses.NewStatusProcessResponse(res)
 			} else if _, ok := req.(process_requests.StartProcessRequest); ok {
 				if this.StartTime != nil {
-					processEvents <- process_events.NewStartFailureProcessEvent("Process already started")
+					events <- process_events.NewStartFailureProcessEvent("Process already started")
 					break
 				}
 				this.StartTime = new(time.Time)
 				*this.StartTime = time.Now()
 				if err := cmd.Run(); err != nil {
-					processEvents <- process_events.NewStartFailureProcessEvent(err.Error())
+					events <- process_events.NewStartFailureProcessEvent(err.Error())
 				} else {
-					processEvents <- process_events.NewStartSuccessProcessEvent()
+					events <- process_events.NewStartSuccessProcessEvent()
 					go func() {
 						cmd.Wait()
-						processEvents <- process_events.NewExitProcessEvent()
+						events <- process_events.NewExitProcessEvent()
 					}()
 					go func() {
 						time.Sleep(time.Duration(taskConfig.StartTime) * time.Millisecond)
-						processEvents <- process_events.NewStartedProcessEvent()
+						events <- process_events.NewStartedProcessEvent()
 					}()
 				}
 			}

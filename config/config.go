@@ -43,7 +43,7 @@ func (this *Config) String() string {
 			"  LogDir: %s\n"+
 			"}",
 		"[\n    "+
-			strings.Join(utils.Map(this.Tasks, func(i int, task *Task) string {
+			strings.Join(utils.Transform(this.Tasks, func(i int, task *Task) string {
 				return fmt.Sprintf(
 					"{\n"+
 						"      Name: %s\n"+
@@ -154,22 +154,22 @@ func (this TaskInvalidPropertyError) Error() string {
 	)
 }
 
-func NewTaskMissingPropertyError(property string) TaskMissingPropertyError {
+func newTaskMissingPropertyError(property string) TaskMissingPropertyError {
 	return TaskMissingPropertyError{
 		TaskPropertyError{property},
 	}
 }
 
-func NewTaskInvalidPropertyError(property, value, info string) TaskInvalidPropertyError {
+func newTaskInvalidPropertyError(property, value, info string) TaskInvalidPropertyError {
 	return TaskInvalidPropertyError{
 		TaskPropertyError{property},
 		value, info,
 	}
 }
 
-func NewTaskEnumPropertyError(property, value string, enum []string) TaskEnumPropertyError {
+func newTaskEnumPropertyError(property, value string, enum []string) TaskEnumPropertyError {
 	return TaskEnumPropertyError{
-		NewTaskInvalidPropertyError(
+		newTaskInvalidPropertyError(
 			property,
 			value,
 			fmt.Sprintf("must be one of %s", "'"+strings.Join(enum, "', '")+"'"),
@@ -209,37 +209,37 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 
 	switch {
 	case task.Name == nil:
-		return NewTaskMissingPropertyError("name")
+		return newTaskMissingPropertyError("name")
 
 	case regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(*task.Name) == false:
-		return NewTaskInvalidPropertyError("name", *task.Name, "must match the pattern /^[a-zA-Z0-9_-]$/")
+		return newTaskInvalidPropertyError("name", *task.Name, "must match the pattern /^[a-zA-Z0-9_-]$/")
 
 	case task.Command == nil:
-		return NewTaskMissingPropertyError("command")
+		return newTaskMissingPropertyError("command")
 
 	case task.Instances == 0:
-		return NewTaskInvalidPropertyError("instances", "0", "must be 1 or greater")
+		return newTaskInvalidPropertyError("instances", "0", "must be 1 or greater")
 
 	case !slices.Contains(restartValues, task.Restart):
-		return NewTaskEnumPropertyError("restart", task.Restart, restartValues)
+		return newTaskEnumPropertyError("restart", task.Restart, restartValues)
 
 	case !slices.Contains(stopSignalValues, task.StopSignal):
-		return NewTaskEnumPropertyError("stopSignal", task.StopSignal, stopSignalValues)
+		return newTaskEnumPropertyError("stopSignal", task.StopSignal, stopSignalValues)
 
 	case !slices.Contains(stdioValues, task.Stdout):
-		return NewTaskEnumPropertyError("stdout", task.Stdout, stdioValues)
+		return newTaskEnumPropertyError("stdout", task.Stdout, stdioValues)
 
 	case !slices.Contains(stdioValues, task.Stderr):
-		return NewTaskEnumPropertyError("stderr", task.Stderr, stdioValues)
+		return newTaskEnumPropertyError("stderr", task.Stderr, stdioValues)
 
 	case task.Permissions != nil && *task.Permissions > 777:
-		return NewTaskInvalidPropertyError("permissions", strconv.Itoa(int(*task.Permissions)), "umask value cannot be greater than 777")
+		return newTaskInvalidPropertyError("permissions", strconv.Itoa(int(*task.Permissions)), "umask value cannot be greater than 777")
 	}
 
 	if fileInfo, err := os.Stat(task.WorkingDirectory); err != nil {
 		return errors.New(fmt.Sprintf("Failed to get information on the current working directory (%s)", err))
 	} else if !fileInfo.IsDir() {
-		return NewTaskInvalidPropertyError("workingDirectory", task.WorkingDirectory, "not a directory")
+		return newTaskInvalidPropertyError("workingDirectory", task.WorkingDirectory, "not a directory")
 	}
 
 	*this = Task(task)

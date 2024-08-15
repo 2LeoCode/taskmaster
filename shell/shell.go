@@ -11,11 +11,6 @@ import (
 	"taskmaster/messages/responses"
 )
 
-type Shell struct {
-	Input  <-chan responses.Response
-	Output chan<- requests.Request
-}
-
 const HELP_MESSAGE = `help: show this help help message
 status: see the status of every program
 start <id>: start a program
@@ -25,6 +20,7 @@ reload: reload configuration file (restart programs only if needed)
 shutdown: stop all processes and taskmaster`
 
 func StartShell(config config.Config, input <-chan responses.Response, output chan<- requests.Request) {
+	defer close(output)
 	commands := make(chan []string)
 	reader := bufio.NewReader(os.Stdin)
 
