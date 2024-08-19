@@ -2,17 +2,18 @@ package runners
 
 import (
 	"taskmaster/config"
+	"taskmaster/config/manager"
 	"taskmaster/helpers"
 	"taskmaster/messages/master/input"
 	"taskmaster/messages/master/output"
 	taskInput "taskmaster/messages/task/input"
 	taskOutput "taskmaster/messages/task/output"
+	"taskmaster/state"
 	"taskmaster/utils"
 )
 
 type MasterRunner struct {
-	ConfigLoader config.ConfigLoader
-	Config       *config.Config
+	ConfigManager *configManager.MasterConfigManager
 
 	Input  <-chan input.Message
 	Output chan<- output.Message
@@ -22,14 +23,8 @@ type MasterRunner struct {
 	GlobalTasksOutput <-chan []taskOutput.Message
 }
 
-func NewMasterRunner(configLoader config.ConfigLoader, input <-chan input.Message, output chan<- output.Message) (*MasterRunner, error) {
-	config, err := configLoader()
-
-	if err != nil {
-		return nil, err
-	}
-
-	nTasks := len(config.Tasks)
+func NewMasterRunner(manager *configManager.MasterConfigManager, input <-chan input.Message, output chan<- output.Message) (*MasterRunner, error) {
+	nTasks := configManager.UseMaster(manager, func(config *config.Config) int { return len(config.Tasks) })
 
 	taskInputs := make([]chan taskInput.Message, nTasks)
 	taskOutputs := make([]chan taskOutput.Message, nTasks)
@@ -37,9 +32,8 @@ func NewMasterRunner(configLoader config.ConfigLoader, input <-chan input.Messag
 	localTasksOutput := make(chan utils.Pair[uint, taskOutput.Message])
 	globalTasksOutput := make(chan []taskOutput.Message)
 
-	instance := MasterRunner{
-		ConfigLoader:      configLoader,
-		Config:            config,
+	instance := &MasterRunner{
+		ConfigManager:     manager,
 		Input:             input,
 		Output:            output,
 		Tasks:             make([]*TaskRunner, nTasks),
@@ -50,36 +44,50 @@ func NewMasterRunner(configLoader config.ConfigLoader, input <-chan input.Messag
 	for i := range instance.Tasks {
 		taskInputs[i] = make(chan taskInput.Message)
 		taskOutputs[i] = make(chan taskOutput.Message)
-		instance.Tasks[i] = newTaskRunner(uint(i), config, taskInputs[i], taskOutputs[i])
+		if task, err := newTaskRunner(configManager.NewTask(manager, uint(i)), taskInputs[i], taskOutputs[i]); err != nil {
+			return nil, err
+		} else {
+			instance.Tasks[i] = task
+		}
 	}
 
-	go func() {
-		globalChunk := make([]taskOutput.Message, nTasks)
-		for {
-			for i := 0; i < len(taskOutputs); i++ {
-				value, ok := <-taskOutputs[i]
-				if !ok {
-					// Not sure what to do here yet
-					close(localTasksOutput)
-					close(globalTasksOutput)
-					return
-				}
-				switch value.(type) {
+	manager.Subscribe(func(config, prev *config.Config) state.StateCleanupFn {
+		// On config reload, to implement here
+		return func() {}
+	})
 
+	globalOutputs := make([]chan taskOutput.Message, len(taskOutputs))
+	for i, out := range taskOutputs {
+		globalOutputs[i] = make(chan taskOutput.Message)
+		i := i
+		out := out
+		go func() {
+			for msg := range out {
+				switch msg.(type) {
 				case helpers.Local:
-					localTasksOutput <- utils.NewPair(uint(i), value)
-					i--
-
+					localTasksOutput <- utils.NewPair(uint(i), msg)
 				case helpers.Global:
-					globalChunk[i] = value
-
+					globalOutputs[i] <- msg
 				}
 			}
-			globalTasksOutput <- globalChunk
+		}()
+	}
+	go func() {
+		chunk := make([]taskOutput.Message, len(globalOutputs))
+		for {
+			for i, ch := range globalOutputs {
+				if value, ok := <-ch; !ok {
+					return
+				} else {
+					chunk[i] = value
+				}
+			}
+
+			globalTasksOutput <- chunk
 		}
 	}()
 
-	return &instance, nil
+	return instance, nil
 }
 
 func (this *MasterRunner) Run() {
@@ -191,7 +199,7 @@ func (this *MasterRunner) Run() {
 			}
 
 		case input.Reload:
-			// TODO
+			go this.ConfigManager.Load()
 
 		default:
 			this.Output <- output.NewBadRequest()

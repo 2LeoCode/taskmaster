@@ -2,17 +2,18 @@ package runners
 
 import (
 	"taskmaster/config"
+	"taskmaster/config/manager"
 	"taskmaster/helpers"
 	processInput "taskmaster/messages/process/input"
 	processOutput "taskmaster/messages/process/output"
 	"taskmaster/messages/task/input"
 	"taskmaster/messages/task/output"
+	"taskmaster/state"
 	"taskmaster/utils"
 )
 
 type TaskRunner struct {
-	Id     uint
-	Config config.Task
+	Id uint
 
 	Input  chan input.Message
 	Output chan output.Message
@@ -22,21 +23,28 @@ type TaskRunner struct {
 	GlobalProcessesOutput <-chan []processOutput.Message
 }
 
-func newTaskRunner(id uint, config *config.Config, input chan input.Message, output chan output.Message) *TaskRunner {
-	taskConfig := config.Tasks[id]
+type buildConfig struct {
+	id        uint
+	instances uint
+}
 
-	processInputs := make([]chan processInput.Message, taskConfig.Instances)
-	processOutputs := make([]chan processOutput.Message, taskConfig.Instances)
+func newTaskRunner(manager *configManager.TaskConfigManager, input chan input.Message, output chan output.Message) (*TaskRunner, error) {
+	conf := configManager.UseTask(manager,
+		func(config *config.Config, taskId uint) *buildConfig {
+			return &buildConfig{taskId, config.Tasks[taskId].Instances}
+		},
+	)
+
+	processInputs := make([]chan processInput.Message, conf.instances)
+	processOutputs := make([]chan processOutput.Message, conf.instances)
 
 	localProcessesOutput := make(chan utils.Pair[uint, processOutput.Message])
 	globalProcessesOutput := make(chan []processOutput.Message)
 
-	instance := TaskRunner{
-		Id:                    id,
-		Config:                taskConfig,
+	instance := &TaskRunner{
 		Input:                 input,
 		Output:                output,
-		Processes:             make([]*ProcessRunner, taskConfig.Instances),
+		Processes:             make([]*ProcessRunner, conf.instances),
 		LocalProcessesOutput:  localProcessesOutput,
 		GlobalProcessesOutput: globalProcessesOutput,
 	}
@@ -44,36 +52,49 @@ func newTaskRunner(id uint, config *config.Config, input chan input.Message, out
 	for i := range instance.Processes {
 		processInputs[i] = make(chan processInput.Message)
 		processOutputs[i] = make(chan processOutput.Message)
-		instance.Processes[i] = newProcessRunner(uint(i), &taskConfig, processInputs[i], processOutputs[i])
+		if process, err := newProcessRunner(manager, uint(i), processInputs[i], processOutputs[i]); err != nil {
+			return nil, err
+		} else {
+			instance.Processes[i] = process
+		}
 	}
 
-	go func() {
-		globalChunk := make([]processOutput.Message, taskConfig.Instances)
-		for {
-			for i := 0; i < len(processOutputs); i++ {
-				value, ok := <-processOutputs[i]
-				if !ok {
-					// Not sure what to do here yet
-					close(localProcessesOutput)
-					close(globalProcessesOutput)
-					return
-				}
-				switch value.(type) {
+	manager.Master.Subscribe(func(newConf, prevConf *config.Config) state.StateCleanupFn {
+		// On config reload, task specific actions, to implement here
+		return func() {}
+	})
 
+	globalOutputs := make([]chan processOutput.Message, len(processOutputs))
+	for i, out := range processOutputs {
+		i := i
+		out := out
+		go func() {
+			for msg := range out {
+				switch msg.(type) {
 				case helpers.Local:
-					localProcessesOutput <- utils.NewPair(uint(i), value)
-					i--
-
+					localProcessesOutput <- utils.NewPair(uint(i), msg)
 				case helpers.Global:
-					globalChunk[i] = value
-
+					globalOutputs[i] <- msg
 				}
-				globalProcessesOutput <- globalChunk
 			}
+		}()
+	}
+	go func() {
+		chunk := make([]processOutput.Message, len(globalOutputs))
+		for {
+			for i, ch := range globalOutputs {
+				if value, ok := <-ch; !ok {
+					return
+				} else {
+					chunk[i] = value
+				}
+			}
+
+			globalProcessesOutput <- chunk
 		}
 	}()
 
-	return &instance
+	return instance, nil
 }
 
 func (this *TaskRunner) Run() {

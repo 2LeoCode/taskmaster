@@ -19,7 +19,7 @@ func newParseError(cause string) ParseError {
 	return ParseError{cause}
 }
 
-func parse(path string) (*Config, error) {
+func Parse(path string) (*Config, error) {
 	if !strings.HasSuffix(path, ".json") {
 		return nil, newParseError("Invalid config file format (expected a json file)")
 	}

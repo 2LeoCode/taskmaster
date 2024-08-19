@@ -5,153 +5,179 @@ import (
 	"os"
 	"os/exec"
 	"taskmaster/config"
+	"taskmaster/config/manager"
 	"taskmaster/messages/process/input"
 	"taskmaster/messages/process/output"
-	"taskmaster/process-events"
+	"taskmaster/state"
 	"time"
 )
 
 type ProcessRunner struct {
 	Id uint
 
+	StdoutLogFile *os.File
+	StderrLogFile *os.File
+
 	Input  chan input.Message
 	Output chan output.Message
 
-	TaskConfig config.Task
+	Command exec.Cmd
 
-	StartTime    *time.Time
-	StartedTime  *time.Time
-	StartRetries *uint
-	StopTime     *time.Time
-	StoppedTime  *time.Time
-	ExitStatus   *int
+	Events chan string
+
+	ConfigManager *configManager.TaskConfigManager
+	StartTime     *time.Time
+	StartedTime   *time.Time
+	StartRetries  *uint
+	StopTime      *time.Time
+	StoppedTime   *time.Time
+	ExitStatus    *int
 
 	HasBeenStopped bool
 	HasBeenKilled  bool
 }
 
-func newProcessRunner(id uint, taskConfig *config.Task, input chan input.Message, output chan output.Message) *ProcessRunner {
-	return &ProcessRunner{
-		Id:         id,
-		Input:      input,
-		Output:     output,
-		TaskConfig: *taskConfig,
-	}
+func (this *ProcessRunner) close() {
+	this.StdoutLogFile.Close()
+	this.StderrLogFile.Close()
 }
 
-func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan process_requests.ProcessRequest, output chan<- process_responses.ProcessResponse) {
-	events := make(chan process_events.ProcessEvent)
-
-	taskConfig := config.Tasks[taskId]
-
-	stdoutLogFile, err := os.OpenFile(
-		fmt.Sprintf(
-			"%s/%d-%d_%s-stdout.log",
-			config.LogDir,
-			taskId,
-			this.ProcId,
-			time.Now().Format("060102_030405"),
-		),
-		os.O_WRONLY|os.O_APPEND|os.O_CREATE,
-		os.ModeAppend.Perm(),
-	)
-	if err != nil {
-		// send InitFailureProcessResponse
-		return
+func newProcessRunner(manager *configManager.TaskConfigManager, id uint, input chan input.Message, output chan output.Message) (*ProcessRunner, error) {
+	instance := &ProcessRunner{
+		Id:            id,
+		Input:         input,
+		Output:        output,
+		ConfigManager: manager,
+		Events:        make(chan string),
 	}
-	defer stdoutLogFile.Close()
-
-	stderrLogFile, err := os.OpenFile(
-		fmt.Sprintf(
-			"%s/%d-%d_%s-stderr.log",
-			config.LogDir,
-			taskId,
-			this.ProcId,
-			time.Now().Format("060102_030405"),
-		),
-		os.O_WRONLY|os.O_APPEND|os.O_CREATE,
-		os.ModeAppend.Perm(),
-	)
-	if err != nil {
-		// send InitFailureProcessResponse
-		return
+	if err := configManager.UseTask(manager, func(config *config.Config, taskId uint) error {
+		if stdoutLogFile, err := os.OpenFile(
+			fmt.Sprintf(
+				"%s/%d-%d_%s-stdout.log",
+				config.LogDir,
+				taskId,
+				instance.Id,
+				time.Now().Format("060102_030405"),
+			),
+			os.O_WRONLY|os.O_APPEND|os.O_CREATE,
+			os.ModeAppend.Perm(),
+		); err != nil {
+			return err
+		} else if stderrLogFile, err := os.OpenFile(
+			fmt.Sprintf(
+				"%s/%d-%d_%s-stderr.log",
+				config.LogDir,
+				taskId,
+				instance.Id,
+				time.Now().Format("060102_030405"),
+			),
+			os.O_WRONLY|os.O_APPEND|os.O_CREATE,
+			os.ModeAppend.Perm(),
+		); err != nil {
+			return err
+		} else {
+			instance.StdoutLogFile = stdoutLogFile
+			instance.StderrLogFile = stderrLogFile
+		}
+		instance.Command = *exec.Command(*config.Tasks[taskId].Command, config.Tasks[taskId].Arguments...)
+		instance.Command.Stdout = instance.StdoutLogFile
+		instance.Command.Stderr = instance.StderrLogFile
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-	defer stderrLogFile.Close()
-	// send InitSuccessProcessResponse
 
-	cmd := exec.Command(*taskConfig.Command, taskConfig.Arguments...)
-	cmd.Stdout = stdoutLogFile
-	cmd.Stderr = stderrLogFile
+	manager.Master.Subscribe(func(config, prev *config.Config) state.StateCleanupFn {
+		// On config reload, process specific actions, to implement here
+		return func() {}
+	})
+
+	return instance, nil
+}
+
+func (this *ProcessRunner) Run() {
+	defer this.close()
 
 	for {
 		select {
-		case event := <-events:
-			if _, ok := event.(process_events.ExitProcessEvent); ok {
-				if this.StartedTime == nil {
 
-				}
-				this.ExitStatus = new(int)
-				*this.ExitStatus = cmd.ProcessState.ExitCode()
-				this.StoppedTime = new(time.Time)
-				*this.StoppedTime = time.Now()
-			} else if _, ok := event.(process_events.StartedProcessEvent); ok {
-				if this.ExitStatus == nil {
+		case event := <-this.Events:
+			switch event {
+
+			case "START":
+				if this.ExitStatus != nil {
+					this.Output <- output.NewStartSuccess()
+				} else {
+					this.Output <- output.NewStartFailure("Process exited before its start time")
 					this.StartedTime = new(time.Time)
 					*this.StartedTime = time.Now()
-				} else {
-					// TODO: Handle restart attempts
 				}
-			} else if event, ok := event.(process_events.StartProcessEvent); ok {
-				if event, ok := event.(process_events.StartSuccessProcessEvent); ok {
-					output <- process_responses.NewStartSuccessProcessResponse()
-				} else if event, ok := event.(process_events.StartFailureProcessEvent); ok {
-					output <- process_responses.NewStartFailureProcessResponse(event.Reason())
-				}
+
+			case "STOP":
+				this.ExitStatus = new(int)
+				*this.ExitStatus = this.Command.ProcessState.ExitCode()
+				this.StoppedTime = new(time.Time)
+				*this.StoppedTime = time.Now()
+
 			}
-		case req := <-input:
-			if _, ok := req.(process_requests.StatusProcessRequest); ok {
-				res := responses.ProcessStatus{Id: this.ProcId}
+
+		case req := <-this.Input:
+			switch req.(type) {
+
+			case input.Status:
+				status := ""
 				switch {
 				case this.StoppedTime != nil:
-					if *this.ExitStatus == taskConfig.ExpectedExitStatus {
-						res.Status = "SUCCESS "
+					expectedExitStatus := configManager.UseMaster(this.ConfigManager.Master, func(conf *config.Config) int { return conf.Tasks[this.Id].ExpectedExitStatus })
+					if *this.ExitStatus == expectedExitStatus {
+						status += "SUCCESS "
 					} else {
-						res.Status = "FAILURE "
+						status += "FAILURE "
 					}
-					res.Status += fmt.Sprint(*this.ExitStatus)
+					status += fmt.Sprint(*this.ExitStatus)
 					if this.HasBeenKilled {
-						res.Status += " KILLED"
+						status += " KILLED"
 					} else if this.HasBeenStopped {
-						res.Status += " STOPPED"
+						status += " STOPPED"
 					}
 				case this.StartTime == nil:
-					res.Status = "NOT_STARTED"
+					status = "NOT_STARTED"
 				case this.StartedTime == nil:
-					res.Status = "STARTING"
+					status = "STARTING"
 				default:
-					res.Status = "RUNNING"
+					status = "RUNNING"
 				}
-				output <- process_responses.NewStatusProcessResponse(res)
-			} else if _, ok := req.(process_requests.StartProcessRequest); ok {
+				this.Output <- output.NewStatus(this.Id, status)
+
+			case input.Start:
 				if this.StartTime != nil {
-					events <- process_events.NewStartFailureProcessEvent("Process already started")
+					this.Output <- output.NewStartFailure("Process already started")
 					break
 				}
 				this.StartTime = new(time.Time)
 				*this.StartTime = time.Now()
-				if err := cmd.Run(); err != nil {
-					events <- process_events.NewStartFailureProcessEvent(err.Error())
+				if err := this.Command.Run(); err != nil {
+					this.Output <- output.NewStartFailure(
+						fmt.Sprintf("Command failed to run (%s)", err.Error()),
+					)
 				} else {
-					events <- process_events.NewStartSuccessProcessEvent()
 					go func() {
-						cmd.Wait()
-						events <- process_events.NewExitProcessEvent()
+						this.Command.Wait()
+						this.Events <- "STOP"
 					}()
+
 					go func() {
-						time.Sleep(time.Duration(taskConfig.StartTime) * time.Millisecond)
-						events <- process_events.NewStartedProcessEvent()
+						startTime := configManager.UseMaster(this.ConfigManager.Master, func(conf *config.Config) uint {
+							return conf.Tasks[this.Id].StartTime
+						})
+						time.Sleep(time.Duration(startTime) * time.Millisecond)
+						this.Events <- "START"
 					}()
 				}
+
+			case input.Stop:
+			case input.Restart:
+			case input.Shutdown:
 			}
 		}
 	}
