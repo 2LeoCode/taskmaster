@@ -83,38 +83,40 @@ func StartShell(config config.Config, input <-chan responses.Response, output ch
 			}
 
 		case res := <-input:
-			if res, ok := res.(responses.StatusResponse); ok {
+			switch res.(type) {
+			case responses.StatusResponse:
 				for i, task := range res.Tasks() {
 					fmt.Printf("%d -- %s\n", task.Id, *config.Tasks[i].Name)
 					for _, proc := range task.Processes {
 						fmt.Printf("  %d -- %s\n", proc.Id, proc.Status)
 					}
 				}
-			} else if res, ok := res.(responses.StartProcessResponse); ok {
+			case responses.StartProcessResponse:
 				if success, ok := res.(responses.StartProcessSuccesResponse); ok {
 					println("Successfully started program %d in task %d.", success.ProcessId(), success.TaskId())
 				} else if failure, ok := res.(responses.StartProcessFailureResponse); ok {
 					println("Failed to start program %d in task %d: %s.", failure.ProcessId(), failure.TaskId(), failure.Reason())
 				}
-			} else if res, ok := res.(responses.StopProcessResponse); ok {
+
+			case responses.StopProcessResponse:
 				if _, ok := res.(responses.StopProcessSuccesResponse); ok {
 					println("Successfully stopped program.")
 				} else if failure, ok := res.(responses.StopProcessFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if res, ok := res.(responses.RestartProcessResponse); ok {
+			case response.RestartProcessResponse:
 				if _, ok := res.(responses.RestartProcessSuccesResponse); ok {
 					println("Successfully restarted program.")
 				} else if failure, ok := res.(responses.RestartProcessFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if res, ok := res.(responses.ReloadConfigResponse); ok {
+			case response.ReloadConfigResponse:
 				if _, ok := res.(responses.ReloadConfigSuccessResponse); ok {
 					println("Successfully reloaded configuration.")
 				} else if failure, ok := res.(responses.ReloadConfigFailureResponse); ok {
 					println(failure.Reason())
 				}
-			} else if _, ok := res.(responses.ShutdownResponse); ok {
+			case response.ShutdownResponse:
 				return
 			}
 		}
