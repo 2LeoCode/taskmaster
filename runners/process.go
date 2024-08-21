@@ -25,7 +25,7 @@ type ProcessRunner struct {
 
 	Events chan string
 
-	ConfigManager *configManager.TaskConfigManager
+	ConfigManager *configManager.Task
 	StartTime     *time.Time
 	StartedTime   *time.Time
 	StartRetries  *uint
@@ -42,7 +42,7 @@ func (this *ProcessRunner) close() {
 	this.StderrLogFile.Close()
 }
 
-func newProcessRunner(manager *configManager.TaskConfigManager, id uint, input chan input.Message, output chan output.Message) (*ProcessRunner, error) {
+func newProcessRunner(manager *configManager.Task, id uint, input chan input.Message, output chan output.Message) (*ProcessRunner, error) {
 	instance := &ProcessRunner{
 		Id:            id,
 		Input:         input,

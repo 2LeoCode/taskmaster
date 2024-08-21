@@ -9,6 +9,4 @@ type badRequest struct{ message }
 
 func (*badRequest) isBadRequest() bool { return true }
 
-func NewBadRequest() BadRequest {
-	return &badRequest{}
-}
+func NewBadRequest() BadRequest { return &badRequest{} }

@@ -1,7 +1,7 @@
 package input
 
 import (
-	"taskmaster/helpers"
+	"taskmaster/messages/helpers"
 	"taskmaster/messages/process"
 )
 

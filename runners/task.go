@@ -3,7 +3,7 @@ package runners
 import (
 	"taskmaster/config"
 	"taskmaster/config/manager"
-	"taskmaster/helpers"
+	"taskmaster/messages/helpers"
 	processInput "taskmaster/messages/process/input"
 	processOutput "taskmaster/messages/process/output"
 	"taskmaster/messages/task/input"
@@ -28,7 +28,7 @@ type buildConfig struct {
 	instances uint
 }
 
-func newTaskRunner(manager *configManager.TaskConfigManager, input chan input.Message, output chan output.Message) (*TaskRunner, error) {
+func newTaskRunner(manager *configManager.Task, input chan input.Message, output chan output.Message) (*TaskRunner, error) {
 	conf := configManager.UseTask(manager,
 		func(config *config.Config, taskId uint) *buildConfig {
 			return &buildConfig{taskId, config.Tasks[taskId].Instances}

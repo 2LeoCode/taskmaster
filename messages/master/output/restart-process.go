@@ -1,7 +1,7 @@
 package output
 
 import (
-	"taskmaster/helpers"
+	"taskmaster/messages/helpers"
 	taskOutput "taskmaster/messages/task/output"
 )
 

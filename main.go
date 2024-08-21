@@ -4,7 +4,7 @@ import (
 	"flag"
 	"log"
 
-	"taskmaster/config"
+	configManager "taskmaster/config/manager"
 	"taskmaster/messages/master/input"
 	"taskmaster/messages/master/output"
 	"taskmaster/runners"
@@ -15,14 +15,14 @@ func main() {
 	configPath := flag.String("config", "./tmconfig.json", "path/to/taskmaster/configuration/file.json")
 	flag.Parse()
 
-	configLoader := config.NewConfigLoader(*configPath)
+	configManager := configManager.NewMaster(*configPath)
 
 	req := make(chan input.Message)
 	res := make(chan output.Message)
-	runner, err := runners.NewMasterRunner(configLoader, req, res)
+	runner, err := runners.NewMasterRunner(configManager, req, res)
 	if err != nil {
 		log.Fatalf("Failed to initialize runner: %s", err)
 	}
 	go runner.Run()
-	shell.StartShell(res, req)
+	shell.StartShell(configManager, res, req)
 }

@@ -3,7 +3,7 @@ package runners
 import (
 	"taskmaster/config"
 	"taskmaster/config/manager"
-	"taskmaster/helpers"
+	"taskmaster/messages/helpers"
 	"taskmaster/messages/master/input"
 	"taskmaster/messages/master/output"
 	taskInput "taskmaster/messages/task/input"
@@ -13,7 +13,7 @@ import (
 )
 
 type MasterRunner struct {
-	ConfigManager *configManager.MasterConfigManager
+	ConfigManager *configManager.Master
 
 	Input  <-chan input.Message
 	Output chan<- output.Message
@@ -23,7 +23,7 @@ type MasterRunner struct {
 	GlobalTasksOutput <-chan []taskOutput.Message
 }
 
-func NewMasterRunner(manager *configManager.MasterConfigManager, input <-chan input.Message, output chan<- output.Message) (*MasterRunner, error) {
+func NewMasterRunner(manager *configManager.Master, input <-chan input.Message, output chan<- output.Message) (*MasterRunner, error) {
 	nTasks := configManager.UseMaster(manager, func(config *config.Config) int { return len(config.Tasks) })
 
 	taskInputs := make([]chan taskInput.Message, nTasks)
