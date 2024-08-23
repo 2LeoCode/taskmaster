@@ -27,8 +27,10 @@ func (this *Master) Load() error {
 	return nil
 }
 
-func NewMaster(path string) *Master {
-	instance := &Master{path: path}
-	instance.Load()
-	return instance
+func NewMaster(path string) (*Master, error) {
+	instance := &Master{path: path, state: state.NewState[*config.Config](nil)}
+	if err := instance.Load(); err != nil {
+		return nil, err
+	}
+	return instance, nil
 }

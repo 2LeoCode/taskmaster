@@ -15,7 +15,10 @@ func main() {
 	configPath := flag.String("config", "./tmconfig.json", "path/to/taskmaster/configuration/file.json")
 	flag.Parse()
 
-	configManager := configManager.NewMaster(*configPath)
+	configManager, err := configManager.NewMaster(*configPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %s\n", err)
+	}
 
 	req := make(chan input.Message)
 	res := make(chan output.Message)
