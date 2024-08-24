@@ -109,30 +109,30 @@ func StartShell(manager *configManager.Master, in <-chan output.Message, out cha
 				res := res.(output.StartProcess)
 				switch res.(type) {
 				case helpers.Success:
-					println("Successfully started program %d in task %d.", res.ProcessId(), res.TaskId())
+					fmt.Printf("Successfully started program %d in task %d.\n", res.ProcessId(), res.TaskId())
 				case helpers.Failure:
 					reason := res.(helpers.Failure).Reason()
-					println("Failed to start program %d in task %d: %s.", res.ProcessId(), res.TaskId(), reason)
+					fmt.Printf("Failed to start program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
 				}
 
 			case output.StopProcess:
 				res := res.(output.StopProcess)
 				switch res.(type) {
 				case helpers.Success:
-					println("Successfully stopped program %d in task %d.", res.ProcessId(), res.TaskId())
+					fmt.Printf("Successfully stopped program %d in task %d.\n", res.ProcessId(), res.TaskId())
 				case helpers.Failure:
 					reason := res.(helpers.Failure).Reason()
-					println("Failed to stop program %d in task %d: %s.", res.ProcessId(), res.TaskId(), reason)
+					fmt.Printf("Failed to stop program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
 				}
 
 			case output.RestartProcess:
 				res := res.(output.RestartProcess)
 				switch res.(type) {
 				case helpers.Success:
-					println("Successfully restarted program %d in task %d.", res.ProcessId(), res.TaskId())
+					fmt.Printf("Successfully restarted program %d in task %d.\n", res.ProcessId(), res.TaskId())
 				case helpers.Failure:
 					reason := res.(helpers.Failure).Reason()
-					println("Failed to restart program %d in task %d: %s.", res.ProcessId(), res.TaskId(), reason)
+					fmt.Printf("Failed to restart program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
 				}
 
 			case output.Reload:
