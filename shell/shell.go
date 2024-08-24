@@ -67,8 +67,8 @@ func StartShell(manager *configManager.Master, in <-chan output.Message, out cha
 				}
 				out <- input.NewStartProcess(uint(taskId), uint(processId))
 			case "stop":
-				if len(cmd) != 2 {
-					println("usage: stop <id>")
+				if len(cmd) != 3 {
+					println("usage: stop <task-id> <process-id>")
 				}
 				taskId, taskIdErr := strconv.ParseUint(cmd[1], 10, 64)
 				processId, processIdErr := strconv.ParseUint(cmd[2], 10, 64)
