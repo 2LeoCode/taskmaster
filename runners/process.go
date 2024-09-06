@@ -125,6 +125,7 @@ func (this *ProcessRunner) Run() {
 			switch req.(type) {
 
 			case input.Status:
+				println("STATUS INSIDE")
 				status := ""
 				switch {
 				case this.StoppedTime != nil:
@@ -147,7 +148,9 @@ func (this *ProcessRunner) Run() {
 				default:
 					status = "RUNNING"
 				}
+				println("Send to [task]")
 				this.Output <- output.NewStatus(this.Id, status)
+				println("Sent to [task]")
 
 			case input.Start:
 				if this.StartTime != nil {

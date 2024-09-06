@@ -135,6 +135,7 @@ func (this *MasterRunner) Run() {
 				switch global[0].(type) {
 
 				case taskOutput.Status:
+					println("OUT OF STATUS TOWARDS [shell]")
 					this.Output <- output.NewStatus(
 						utils.Transform(
 							global,

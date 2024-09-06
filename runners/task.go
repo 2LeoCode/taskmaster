@@ -132,7 +132,6 @@ func (this *TaskRunner) Run() {
 						local.First,
 						local.Second.(processOutput.Restart),
 					)
-
 				}
 
 			case global, ok := <-this.GlobalProcessesOutput:
@@ -142,6 +141,7 @@ func (this *TaskRunner) Run() {
 				switch global[0].(type) {
 
 				case processOutput.Status:
+					println("OUT OF STATUS TOWARDS [master]")
 					this.Output <- output.NewStatus(
 						this.Id,
 						utils.Transform(
