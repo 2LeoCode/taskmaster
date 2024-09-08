@@ -98,13 +98,12 @@ func (this *MasterRunner) Run() {
 	go func() {
 		defer close(this.Output)
 
-	loop:
 		for {
 			select {
 
 			case local, ok := <-this.LocalTasksOutput:
 				if !ok {
-					break loop
+					return
 				}
 				switch local.Second.(type) {
 
@@ -130,7 +129,7 @@ func (this *MasterRunner) Run() {
 
 			case global, ok := <-this.GlobalTasksOutput:
 				if !ok {
-					break loop
+					return
 				}
 				switch global[0].(type) {
 

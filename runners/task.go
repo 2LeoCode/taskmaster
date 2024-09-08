@@ -66,6 +66,7 @@ func newTaskRunner(manager *configManager.Task, input chan input.Message, output
 
 	globalOutputs := make([]chan processOutput.Message, len(processOutputs))
 	for i, out := range processOutputs {
+		globalOutputs[i] = make(chan processOutput.Message)
 		i := i
 		out := out
 		go func() {
@@ -89,7 +90,6 @@ func newTaskRunner(manager *configManager.Task, input chan input.Message, output
 					chunk[i] = value
 				}
 			}
-
 			globalProcessesOutput <- chunk
 		}
 	}()

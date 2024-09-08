@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 	"taskmaster/config"
 	"taskmaster/config/manager"
 	"taskmaster/messages/process/input"
@@ -11,6 +12,39 @@ import (
 	"taskmaster/state"
 	"time"
 )
+
+var SIGNAL_TABLE = map[string]os.Signal{
+	"SIGHUP":    syscall.SIGHUP,
+	"SIGINT":    syscall.SIGINT,
+	"SIGQUIT":   syscall.SIGQUIT,
+	"SIGILL":    syscall.SIGILL,
+	"SIGTRAP":   syscall.SIGTRAP,
+	"SIGABRT":   syscall.SIGABRT,
+	"SIGFPE":    syscall.SIGFPE,
+	"SIGKILL":   syscall.SIGKILL,
+	"SIGBUS":    syscall.SIGBUS,
+	"SIGSEGV":   syscall.SIGSEGV,
+	"SIGSYS":    syscall.SIGSYS,
+	"SIGPIPE":   syscall.SIGPIPE,
+	"SIGALRM":   syscall.SIGALRM,
+	"SIGTERM":   syscall.SIGTERM,
+	"SIGUSR1":   syscall.SIGUSR1,
+	"SIGUSR2":   syscall.SIGUSR2,
+	"SIGCHLD":   syscall.SIGCHLD,
+	"SIGPWR":    syscall.SIGPWR,
+	"SIGWINCH":  syscall.SIGWINCH,
+	"SIGURG":    syscall.SIGURG,
+	"SIGPOLL":   syscall.SIGPOLL,
+	"SIGSTOP":   syscall.SIGSTOP,
+	"SIGTSTP":   syscall.SIGTSTP,
+	"SIGCONT":   syscall.SIGCONT,
+	"SIGTTIN":   syscall.SIGTTIN,
+	"SIGTTOU":   syscall.SIGTTOU,
+	"SIGVTALRM": syscall.SIGVTALRM,
+	"SIGPROF":   syscall.SIGPROF,
+	"SIGXCPU":   syscall.SIGXCPU,
+	"SIGXFSZ":   syscall.SIGXFSZ,
+}
 
 type ProcessRunner struct {
 	Id uint
@@ -26,15 +60,14 @@ type ProcessRunner struct {
 	Events chan string
 
 	ConfigManager *configManager.Task
-	StartTime     *time.Time
-	StartedTime   *time.Time
 	StartRetries  *uint
+	UserStartTime *time.Time
+	StartTime     *time.Time
+	UserStopTime  *time.Time
 	StopTime      *time.Time
-	StoppedTime   *time.Time
 	ExitStatus    *int
 
-	HasBeenStopped bool
-	HasBeenKilled  bool
+	HasBeenKilled bool
 }
 
 func (this *ProcessRunner) close() {
@@ -105,20 +138,29 @@ func (this *ProcessRunner) Run() {
 			switch event {
 
 			case "START":
-				if this.ExitStatus != nil {
+				if this.ExitStatus == nil {
 					this.Output <- output.NewStartSuccess()
+					this.UserStartTime = new(time.Time)
+					*this.UserStartTime = time.Now()
 				} else {
 					this.Output <- output.NewStartFailure("Process exited before its start time")
-					this.StartedTime = new(time.Time)
-					*this.StartedTime = time.Now()
 				}
 
 			case "STOP":
 				this.ExitStatus = new(int)
 				*this.ExitStatus = this.Command.ProcessState.ExitCode()
-				this.StoppedTime = new(time.Time)
-				*this.StoppedTime = time.Now()
+				this.StopTime = new(time.Time)
+				*this.StopTime = time.Now()
+				if this.UserStopTime != nil {
+					this.Output <- output.NewStopSuccess(this.HasBeenKilled)
+				}
 
+			case "KILL_IF_ALIVE":
+				if this.ExitStatus != nil {
+					break
+				}
+				this.HasBeenKilled = true
+				this.Command.Process.Kill()
 			}
 
 		case req := <-this.Input:
@@ -127,8 +169,8 @@ func (this *ProcessRunner) Run() {
 			case input.Status:
 				status := ""
 				switch {
-				case this.StoppedTime != nil:
-					expectedExitStatus := configManager.UseMaster(this.ConfigManager.Master, func(conf *config.Config) int { return conf.Tasks[this.Id].ExpectedExitStatus })
+				case this.StopTime != nil:
+					expectedExitStatus := configManager.UseTask(this.ConfigManager, func(conf *config.Config, taskId uint) int { return conf.Tasks[taskId].ExpectedExitStatus })
 					if *this.ExitStatus == expectedExitStatus {
 						status += "SUCCESS "
 					} else {
@@ -137,12 +179,12 @@ func (this *ProcessRunner) Run() {
 					status += fmt.Sprint(*this.ExitStatus)
 					if this.HasBeenKilled {
 						status += " KILLED"
-					} else if this.HasBeenStopped {
+					} else if this.UserStopTime != nil {
 						status += " STOPPED"
 					}
 				case this.StartTime == nil:
 					status = "NOT_STARTED"
-				case this.StartedTime == nil:
+				case this.UserStartTime == nil:
 					status = "STARTING"
 				default:
 					status = "RUNNING"
@@ -154,9 +196,12 @@ func (this *ProcessRunner) Run() {
 					this.Output <- output.NewStartFailure("Process already started")
 					break
 				}
+				configStartTime := configManager.UseTask(this.ConfigManager, func(conf *config.Config, taskId uint) uint {
+					return conf.Tasks[this.Id].StartTime
+				})
 				this.StartTime = new(time.Time)
 				*this.StartTime = time.Now()
-				if err := this.Command.Run(); err != nil {
+				if err := this.Command.Start(); err != nil {
 					this.Output <- output.NewStartFailure(
 						fmt.Sprintf("Command failed to run (%s)", err.Error()),
 					)
@@ -167,15 +212,36 @@ func (this *ProcessRunner) Run() {
 					}()
 
 					go func() {
-						startTime := configManager.UseMaster(this.ConfigManager.Master, func(conf *config.Config) uint {
-							return conf.Tasks[this.Id].StartTime
-						})
-						time.Sleep(time.Duration(startTime) * time.Millisecond)
+						time.Sleep(time.Duration(configStartTime) * time.Millisecond)
 						this.Events <- "START"
 					}()
 				}
 
 			case input.Stop:
+				if this.UserStopTime != nil || this.StopTime != nil {
+					this.Output <- output.NewStopFailure("Process already stopping or stopped")
+				}
+				configStopSignal, configStopTime := func() (string, uint) {
+					type fieldsType struct {
+						stopSignal string
+						stopTime   uint
+					}
+					fields := configManager.UseTask(this.ConfigManager, func(config *config.Config, taskId uint) fieldsType {
+						return fieldsType{
+							config.Tasks[taskId].StopSignal,
+							config.Tasks[taskId].StopTime,
+						}
+					})
+					return fields.stopSignal, fields.stopTime
+				}()
+				this.UserStopTime = new(time.Time)
+				*this.UserStopTime = time.Now()
+				this.Command.Process.Signal(SIGNAL_TABLE[configStopSignal])
+				go func() {
+					time.Sleep(time.Duration(configStopTime) * time.Millisecond)
+					this.Events <- "KILL_IF_ALIVE"
+				}()
+
 			case input.Restart:
 			case input.Shutdown:
 			}
