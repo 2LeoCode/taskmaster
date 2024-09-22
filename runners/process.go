@@ -130,7 +130,6 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 					}()
 				}
 			} else if _, ok := req.(process_requests.StopProcessProcessRequest); ok {
-				println("Received request (process)")
 
 				syscall.Kill(cmd.Process.Pid, syscall.SIGTERM)
 
@@ -142,9 +141,9 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 					cmd.Wait()
 					select {
 					case ch <- process_events.NewExitProcessEvent():
-						println("Sent exit message")
+						//println("Sent exit message")
 					default:
-						println("Already killed")
+						//println("Already killed")
 					}
 				}()
 				wg.Add(1)
@@ -152,12 +151,10 @@ func (this *ProcessRunner) Run(config *config.Config, taskId uint, input <-chan 
 					defer wg.Done()
 					select {
 					case <- time.After(time.Duration(taskConfig.StartTime) * time.Millisecond):
-						println("Sending KILL")
 						syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
 					case <- ch:
-						println("Success!!!")
+						//println("Success!!!")
 					}
-					println("Sending response to [task]")
 					output <- process_responses.NewStopProcessSuccessProcessResponse()
 				}()
 				
