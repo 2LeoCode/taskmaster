@@ -129,10 +129,28 @@ func newProcessRunner(manager *configManager.Task, id uint, input chan input.Mes
 }
 
 func (this *ProcessRunner) RestartProcess() {
-	println("Stopping")
-	this.StopProcess()
+	configStopSignal, configStopTime := func() (string, uint) {
+		type fieldsType struct {
+			stopSignal string
+			stopTime   uint
+		}
+		fields := configManager.UseTask(this.ConfigManager, func(config *config.Config, taskId uint) fieldsType {
+			return fieldsType{
+				config.Tasks[taskId].StopSignal,
+				config.Tasks[taskId].StopTime,
+			}
+		})
+		return fields.stopSignal, fields.stopTime
+	}()
+	this.Command.Process.Signal(SIGNAL_TABLE[configStopSignal])
+	go func() {
+		time.Sleep(time.Duration(configStopTime) * time.Millisecond)
+		if this.ExitStatus == nil {
+		this.HasBeenKilled = true
+		this.Command.Process.Kill()
+		}
 	this.Command.Wait()
-	println("Stopped?")
+	println("Process stopped")
 	//Remove trace of previous run to prevent conflict with current functions
 	//This will need to be fixed
 	this.UserStopTime = nil
@@ -146,10 +164,9 @@ func (this *ProcessRunner) RestartProcess() {
 		this.Command = *exec.Command(*task.Command, task.Arguments...)
 		return 0
 	})
-	println("Starting")
 	this.StartProcess()
-	println("Started?")
 
+	}()
 }
 func (this *ProcessRunner) StartProcess() {
 	configStartTime := configManager.UseTask(this.ConfigManager, func(conf *config.Config, taskId uint) uint {

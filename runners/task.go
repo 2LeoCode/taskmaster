@@ -196,7 +196,8 @@ func (this *TaskRunner) Run() {
 				)
 				break
 			}
-			this.Processes[req.ProcessId()].Input <- processInput.NewRestart()
+			id := req.ProcessId()
+			this.Processes[id].Input <- processInput.NewRestart()
 
 		case input.Shutdown:
 			for _, proc := range this.Processes {

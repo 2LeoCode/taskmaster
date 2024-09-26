@@ -114,7 +114,6 @@ func (this *MasterRunner) Run() {
 					)
 
 				case taskOutput.StopProcess:
-					println("toto")
 					this.Output <- output.NewStopProcess(
 						local.First,
 						local.Second.(taskOutput.StopProcess),
