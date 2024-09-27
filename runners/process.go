@@ -192,12 +192,24 @@ func (this *ProcessRunner) StartProcess() {
 	} else {
 		go func() {
 			this.Command.Wait()
-			this.Events <- "STOP"
+			this.ExitStatus = new(int)
+			*this.ExitStatus = this.Command.ProcessState.ExitCode()
+			this.StopTime = new(time.Time)
+			*this.StopTime = time.Now()
+			if this.UserStopTime != nil {
+				this.Output <- output.NewStopSuccess(this.HasBeenKilled)
+			}
 		}()
 
 		go func() {
 			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
-			this.Events <- "START"
+			if this.ExitStatus == nil {
+				this.Output <- output.NewStartSuccess()
+				this.UserStartTime = new(time.Time)
+				*this.UserStartTime = time.Now()
+			} else {
+				this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
+			}
 		}()
 	}
 
@@ -239,7 +251,11 @@ func (this *ProcessRunner) StopProcess() {
 	this.Command.Process.Signal(SIGNAL_TABLE[configStopSignal])
 	go func() {
 		time.Sleep(time.Duration(configStopTime) * time.Millisecond)
-		this.Events <- "KILL_IF_ALIVE"
+		if this.ExitStatus != nil {
+			return
+		}
+		this.HasBeenKilled = true
+		this.Command.Process.Kill()
 	}()
 
 }
@@ -248,36 +264,6 @@ func (this *ProcessRunner) Run() {
 	defer this.close()
 	for {
 		select {
-
-		case event := <-this.Events:
-			switch event {
-
-			case "START":
-				if this.ExitStatus == nil {
-					this.Output <- output.NewStartSuccess()
-					this.UserStartTime = new(time.Time)
-					*this.UserStartTime = time.Now()
-				} else {
-					this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
-				}
-
-			case "STOP":
-				this.ExitStatus = new(int)
-				*this.ExitStatus = this.Command.ProcessState.ExitCode()
-				this.StopTime = new(time.Time)
-				*this.StopTime = time.Now()
-				if this.UserStopTime != nil {
-					this.Output <- output.NewStopSuccess(this.HasBeenKilled)
-				}
-
-			case "KILL_IF_ALIVE":
-				if this.ExitStatus != nil {
-					break
-				}
-				this.HasBeenKilled = true
-				this.Command.Process.Kill()
-			}
-
 		case req := <-this.Input:
 			switch req.(type) {
 
