@@ -52,7 +52,8 @@ func newTaskRunner(manager *configManager.Task, input chan input.Message, output
 	for i := range instance.Processes {
 		processInputs[i] = make(chan processInput.Message)
 		processOutputs[i] = make(chan processOutput.Message)
-		if process, err := newProcessRunner(manager, uint(i), processInputs[i], processOutputs[i]); err != nil {
+		process, err := newProcessRunner(manager, uint(i), processInputs[i], processOutputs[i])
+		if err != nil {
 			return nil, err
 		} else {
 			instance.Processes[i] = process
