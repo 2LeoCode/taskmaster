@@ -1,26 +1,30 @@
 package runners
 
 import (
+	"sync"
+
 	"taskmaster/config"
-	"taskmaster/config/manager"
 	"taskmaster/messages/helpers"
 	processInput "taskmaster/messages/process/input"
 	processOutput "taskmaster/messages/process/output"
 	"taskmaster/messages/task/input"
 	"taskmaster/messages/task/output"
-	"taskmaster/state"
 	"taskmaster/utils"
 )
 
 type TaskRunner struct {
+	Config *config.Task
+
 	Id uint
 
-	Input  chan input.Message
-	Output chan output.Message
+	Input  <-chan input.Message
+	Output chan<- output.Message
 
 	Processes             []*ProcessRunner
 	LocalProcessesOutput  <-chan utils.Pair[uint, processOutput.Message]
 	GlobalProcessesOutput <-chan []processOutput.Message
+
+	processInputs []chan<- processInput.Message
 }
 
 type buildConfig struct {
@@ -28,44 +32,46 @@ type buildConfig struct {
 	instances uint
 }
 
-func newTaskRunner(manager *configManager.Task, input chan input.Message, output chan output.Message) (*TaskRunner, error) {
-	conf := configManager.UseTask(manager,
-		func(config *config.Config, taskId uint) *buildConfig {
-			return &buildConfig{taskId, config.Tasks[taskId].Instances}
-		},
-	)
+func newTaskRunner(manager *config.Manager, id uint, input <-chan input.Message, output chan<- output.Message) (*TaskRunner, error) {
+	conf := config.Use(manager, func(cfg *config.Config) *config.Task { return &cfg.Tasks[id] })
 
-	processInputs := make([]chan processInput.Message, conf.instances)
-	processOutputs := make([]chan processOutput.Message, conf.instances)
+	processInputs := make([]chan processInput.Message, conf.Instances)
+	processOutputs := make([]chan processOutput.Message, conf.Instances)
 
 	localProcessesOutput := make(chan utils.Pair[uint, processOutput.Message])
 	globalProcessesOutput := make(chan []processOutput.Message)
 
 	instance := &TaskRunner{
+		Config:                conf,
+		Id:                    id,
 		Input:                 input,
 		Output:                output,
-		Processes:             make([]*ProcessRunner, conf.instances),
+		Processes:             make([]*ProcessRunner, conf.Instances),
 		LocalProcessesOutput:  localProcessesOutput,
 		GlobalProcessesOutput: globalProcessesOutput,
+		processInputs:         utils.Transform(processInputs, func(_ int, ch *chan processInput.Message) chan<- processInput.Message { return *ch }),
 	}
 
 	for i := range instance.Processes {
 		processInputs[i] = make(chan processInput.Message)
 		processOutputs[i] = make(chan processOutput.Message)
-		process, err := newProcessRunner(manager, uint(i), processInputs[i], processOutputs[i])
-		if err != nil {
+		if process, err := newProcessRunner(manager, conf, id, uint(i), processInputs[i], processOutputs[i]); err != nil {
 			return nil, err
 		} else {
 			instance.Processes[i] = process
 		}
 	}
 
-	manager.Master.Subscribe(func(newConf, prevConf *config.Config) state.StateCleanupFn {
-		// On config reload, task specific actions, to implement here
-		return func() {}
-	})
-
 	globalOutputs := make([]chan processOutput.Message, len(processOutputs))
+
+	var wg sync.WaitGroup
+	wg.Add(len(processOutputs))
+
+	go func() {
+		wg.Wait()
+		close(localProcessesOutput)
+	}()
+
 	for i, out := range processOutputs {
 		globalOutputs[i] = make(chan processOutput.Message)
 		i := i
@@ -79,8 +85,11 @@ func newTaskRunner(manager *configManager.Task, input chan input.Message, output
 					globalOutputs[i] <- msg
 				}
 			}
+			close(globalOutputs[i])
+			wg.Done()
 		}()
 	}
+
 	go func() {
 		chunk := make([]processOutput.Message, len(globalOutputs))
 		for {
@@ -98,13 +107,29 @@ func newTaskRunner(manager *configManager.Task, input chan input.Message, output
 	return instance, nil
 }
 
+func (this *TaskRunner) close() {
+	close(this.Output)
+	for _, ch := range this.processInputs {
+		close(ch)
+	}
+}
+
+func (this *TaskRunner) forwardGlobalMessage(message interface {
+	helpers.Global
+	processInput.Message
+}) {
+	for _, ch := range this.processInputs {
+		ch <- message
+	}
+}
+
 func (this *TaskRunner) Run() {
+	defer this.close()
 	for _, proc := range this.Processes {
 		go proc.Run()
 	}
 
 	go func() {
-		defer close(this.Output)
 
 	loop:
 		for {
@@ -144,6 +169,7 @@ func (this *TaskRunner) Run() {
 				case processOutput.Status:
 					this.Output <- output.NewStatus(
 						this.Id,
+						*this.Config.Name,
 						utils.Transform(
 							global,
 							func(i int, elem *processOutput.Message) processOutput.Status {
@@ -162,9 +188,7 @@ func (this *TaskRunner) Run() {
 		switch req.(type) {
 
 		case input.Status:
-			for _, proc := range this.Processes {
-				proc.Input <- processInput.NewStatus()
-			}
+			this.forwardGlobalMessage(processInput.NewStatus())
 
 		case input.StartProcess:
 			req := req.(input.StartProcess)
@@ -175,7 +199,7 @@ func (this *TaskRunner) Run() {
 				)
 				break
 			}
-			this.Processes[req.ProcessId()].Input <- processInput.NewStart()
+			this.processInputs[req.ProcessId()] <- processInput.NewStart()
 
 		case input.StopProcess:
 			req := req.(input.StopProcess)
@@ -186,7 +210,7 @@ func (this *TaskRunner) Run() {
 				)
 				break
 			}
-			this.Processes[req.ProcessId()].Input <- processInput.NewStop()
+			this.processInputs[req.ProcessId()] <- processInput.NewStop()
 
 		case input.RestartProcess:
 			req := req.(input.RestartProcess)
@@ -197,13 +221,11 @@ func (this *TaskRunner) Run() {
 				)
 				break
 			}
-			id := req.ProcessId()
-			this.Processes[id].Input <- processInput.NewRestart()
+			this.processInputs[req.ProcessId()] <- processInput.NewRestart()
 
 		case input.Shutdown:
-			for _, proc := range this.Processes {
-				proc.Input <- processInput.NewShutdown()
-			}
+			this.forwardGlobalMessage(processInput.NewShutdown())
+			return
 
 		}
 	}

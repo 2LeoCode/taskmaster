@@ -2,7 +2,7 @@ package state
 
 import "taskmaster/utils"
 
-type StateSubscribeFn[T any] func(T, T) StateCleanupFn
+type StateSubscribeFn[T any] func(T, T) (StateCleanupFn, error)
 type StateUseFn[T, R any] func(T) R
 type StateCleanupFn func()
 
@@ -31,8 +31,8 @@ func withLock[T, R any](state *State[T], callback func() R) R {
 	return callback()
 }
 
-func (this *State[T]) Set(value T) {
-	withLock(this, utils.NoReturn(func() {
+func (this *State[T]) Set(value T) error {
+	return withLock(this, func() error {
 		for _, cleanup := range this.cleanups {
 			if cleanup != nil {
 				cleanup()
@@ -40,10 +40,19 @@ func (this *State[T]) Set(value T) {
 		}
 		this.cleanups = make([]StateCleanupFn, len(this.hooks))
 		for i, hook := range this.hooks {
-			this.cleanups[i] = hook(value, this.value)
+			cleanup, err := hook(value, this.value)
+			this.cleanups[i] = cleanup
+			if err != nil {
+				return err
+			}
 		}
 		this.value = value
-	}))
+		return nil
+	})
+}
+
+func (this *State[T]) Get() T {
+	return Use(this, utils.Get)
 }
 
 func (this *State[T]) Subscribe(hook StateSubscribeFn[T]) {
@@ -55,7 +64,9 @@ func (this *State[T]) Subscribe(hook StateSubscribeFn[T]) {
 func (this *State[T]) Close(state *State[T]) {
 	withLock(state, utils.NoReturn(func() {
 		for _, cleanup := range state.cleanups {
-			cleanup()
+			if cleanup != nil {
+				cleanup()
+			}
 		}
 	}))
 	close(state.acquirer)

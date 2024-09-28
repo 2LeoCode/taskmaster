@@ -6,8 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"taskmaster/config"
-	configManager "taskmaster/config/manager"
 	"taskmaster/messages/helpers"
 	"taskmaster/messages/master/input"
 	"taskmaster/messages/master/output"
@@ -22,7 +20,7 @@ restart <id>: restart a program
 reload: reload configuration file (restart programs only if needed)
 shutdown: stop all processes and taskmaster`
 
-func StartShell(manager *configManager.Master, in <-chan output.Message, out chan<- input.Message) {
+func StartShell(in <-chan output.Message, out chan<- input.Message) {
 	defer close(out)
 	commands := make(chan []string)
 	scanner := bufio.NewScanner(os.Stdin)
@@ -36,7 +34,7 @@ func StartShell(manager *configManager.Master, in <-chan output.Message, out cha
 			}
 			cmd := scanner.Text()
 			tokens := strings.Split(cmd, " ")
-			utils.Filter(&tokens, func(i int, token *string) bool { return len(*token) != 0 })
+			utils.Filter(&tokens, func(_ int, token *string) bool { return len(*token) != 0 })
 			if len(tokens) == 0 {
 				continue
 			}
@@ -108,9 +106,8 @@ func StartShell(manager *configManager.Master, in <-chan output.Message, out cha
 			switch res.(type) {
 			case output.Status:
 				res := res.(output.Status)
-				for i, task := range res.Tasks() {
-					name := configManager.UseMaster(manager, func(conf *config.Config) string { return *conf.Tasks[i].Name })
-					fmt.Printf("%d -- %s\n", task.TaskId(), name)
+				for _, task := range res.Tasks() {
+					fmt.Printf("%d -- %s\n", task.TaskId(), task.Name())
 					for _, proc := range task.Processes() {
 						fmt.Printf("  %d -- %s\n", proc.ProcessId(), proc.Value())
 					}

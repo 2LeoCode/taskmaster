@@ -1,16 +1,18 @@
 package runners
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
+
 	"taskmaster/config"
-	"taskmaster/config/manager"
 	"taskmaster/messages/process/input"
 	"taskmaster/messages/process/output"
 	"taskmaster/state"
-	"time"
+	"taskmaster/utils"
 )
 
 var SIGNAL_TABLE = map[string]os.Signal{
@@ -52,162 +54,180 @@ const ERROR_START_KILLED string = "Process was killed. " + HINT_RESTART
 const ERROR_START_ALREADY_STARTED string = "Process already started. " + HINT_RESTART
 const ERROR_START_STOPPED_EARLY = "Process stopped before the configured time"
 
+type ProcessState struct {
+	StartRetries  *state.State[*uint]
+	UserStartTime *state.State[*time.Time]
+	StartTime     *state.State[*time.Time]
+	UserStopTime  *state.State[*time.Time]
+	StopTime      *state.State[*time.Time]
+	ExitStatus    *state.State[*int]
+	HasBeenKilled *state.State[bool]
+	Command       *state.State[*exec.Cmd]
+}
+
+func (this *ProcessState) Reset() {
+	*this = *NewProcessState()
+}
+
+func NewProcessState() *ProcessState {
+	return &ProcessState{
+		StartRetries:  state.NewState[*uint](nil),
+		UserStartTime: state.NewState[*time.Time](nil),
+		StartTime:     state.NewState[*time.Time](nil),
+		UserStopTime:  state.NewState[*time.Time](nil),
+		StopTime:      state.NewState[*time.Time](nil),
+		ExitStatus:    state.NewState[*int](nil),
+		HasBeenKilled: state.NewState(false),
+		Command:       state.NewState[*exec.Cmd](nil),
+	}
+}
+
 type ProcessRunner struct {
-	Id uint
+	ConfigManager *config.Manager
+	TaskConfig    *config.Task
+
+	TaskId uint
+	Id     uint
 
 	StdoutLogFile *os.File
 	StderrLogFile *os.File
 
-	Input  chan input.Message
-	Output chan output.Message
-
-	Command exec.Cmd
+	Input  <-chan input.Message
+	Output chan<- output.Message
 
 	Events chan string
 
-	ConfigManager *configManager.Task
-	StartRetries  *uint
-	UserStartTime *time.Time
-	StartTime     *time.Time
-	UserStopTime  *time.Time
-	StopTime      *time.Time
-	ExitStatus    *int
-
-	HasBeenKilled bool
+	State *ProcessState
 }
 
 func (this *ProcessRunner) close() {
+	this.StopProcess()
 	this.StdoutLogFile.Close()
 	this.StderrLogFile.Close()
 }
 
-func newProcessRunner(manager *configManager.Task, id uint, input chan input.Message, output chan output.Message) (*ProcessRunner, error) {
+func (this *ProcessRunner) initCommand(conf *config.Task) {
+	command := exec.Command(*conf.Command, conf.Arguments...)
+	command.Stdout = this.StdoutLogFile
+	command.Stderr = this.StderrLogFile
+	this.State.Command.Set(command)
+}
+
+type OutputSource int
+
+const (
+	STDOUT OutputSource = iota
+	STDERR
+)
+
+func getLogFile(source OutputSource, logConfig string, conf *config.Config, taskId, processId uint) (*os.File, error) {
+	if logConfig == "inherit" {
+		switch source {
+		case STDOUT:
+			return os.Stdout, nil
+		case STDERR:
+			return os.Stderr, nil
+		}
+		return nil, errors.New("source must be either STDOUT or STDERR")
+	}
+
+	var logFileName string
+
+	switch logConfig {
+	case "redirect":
+		logFileName = fmt.Sprintf(
+			"%s/%d-%d_%s-stdout.log",
+			conf.LogDir,
+			taskId,
+			processId,
+			time.Now().Format("060102_030405"),
+		)
+	case "ignore":
+		logFileName = "/dev/null"
+	default:
+		return nil, fmt.Errorf("Invalid log configuration %s", logConfig)
+	}
+
+	return os.OpenFile(
+		logFileName,
+		os.O_WRONLY|os.O_APPEND|os.O_CREATE,
+		os.ModeAppend.Perm(),
+	)
+}
+
+func newProcessRunner(manager *config.Manager, taskConfig *config.Task, taskId, id uint, input <-chan input.Message, output chan<- output.Message) (*ProcessRunner, error) {
 	instance := &ProcessRunner{
+		ConfigManager: manager,
+		TaskConfig:    taskConfig,
+		TaskId:        taskId,
 		Id:            id,
 		Input:         input,
 		Output:        output,
-		ConfigManager: manager,
 		Events:        make(chan string),
+		State:         NewProcessState(),
 	}
-	if err := configManager.UseTask(manager, func(config *config.Config, taskId uint) error {
-		if stdoutLogFile, err := os.OpenFile(
-			fmt.Sprintf(
-				"%s/%d-%d_%s-stdout.log",
-				config.LogDir,
-				taskId,
-				instance.Id,
-				time.Now().Format("060102_030405"),
-			),
-			os.O_WRONLY|os.O_APPEND|os.O_CREATE,
-			os.ModeAppend.Perm(),
-		); err != nil {
+	if err := config.Use(manager, func(conf *config.Config) error {
+		if stdoutLogFile, err := getLogFile(STDOUT, taskConfig.Stdout, conf, taskId, id); err != nil {
 			return err
-		} else if stderrLogFile, err := os.OpenFile(
-			fmt.Sprintf(
-				"%s/%d-%d_%s-stderr.log",
-				config.LogDir,
-				taskId,
-				instance.Id,
-				time.Now().Format("060102_030405"),
-			),
-			os.O_WRONLY|os.O_APPEND|os.O_CREATE,
-			os.ModeAppend.Perm(),
-		); err != nil {
+		} else if stderrLogFile, err := getLogFile(STDERR, taskConfig.Stderr, conf, taskId, id); err != nil {
 			return err
 		} else {
 			instance.StdoutLogFile = stdoutLogFile
 			instance.StderrLogFile = stderrLogFile
 		}
-		instance.Command = *exec.Command(*config.Tasks[taskId].Command, config.Tasks[taskId].Arguments...)
-		instance.Command.Stdout = instance.StdoutLogFile
-		instance.Command.Stderr = instance.StderrLogFile
+		instance.initCommand(taskConfig)
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
-	manager.Master.Subscribe(func(config, prev *config.Config) state.StateCleanupFn {
-		// On config reload, process specific actions, to implement here
-		return func() {}
-	})
-
 	return instance, nil
 }
 
-func (this *ProcessRunner) GetConfigStopInfo() (string, uint) {
-	return func() (string, uint) {
-		type fieldsType struct {
-			stopSignal string
-			stopTime   uint
-		}
-		var function = func(config *config.Config, taskId uint) fieldsType {
-			return fieldsType{
-				config.Tasks[taskId].StopSignal,
-				config.Tasks[taskId].StopTime,
-			}
-		}
-		fields := configManager.UseTask(this.ConfigManager, function)
-		return fields.stopSignal, fields.stopTime
-	}()
-}
 func (this *ProcessRunner) RestartProcess() {
-	configStopSignal, configStopTime := this.GetConfigStopInfo()
-	this.Command.Process.Signal(SIGNAL_TABLE[configStopSignal])
+	command := this.State.Command.Get()
+	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
 	go func() { //Proceed with the function when we know the process has stopped
-		time.Sleep(time.Duration(configStopTime) * time.Millisecond)
-		if this.ExitStatus == nil {
-			this.HasBeenKilled = true
-			this.Command.Process.Kill()
+		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
+		if exitStatus := this.State.ExitStatus.Get(); exitStatus == nil {
+			this.State.HasBeenKilled.Set(true)
+			command.Process.Kill()
+			command.Process.Wait()
 		}
-		this.Command.Wait()
 		//Remove trace of previous run to prevent conflict with current functions
-		//This will need to be fixed
-		this.UserStopTime = nil
-		this.HasBeenKilled = false
-		this.StopTime = nil  
-		this.ExitStatus = nil
-		this.UserStartTime = nil
-		this.StartTime = nil
-		var remakeCommand = func(conf *config.Config, taskId uint)  int {
-			task := conf.Tasks[taskId]
-			this.Command = *exec.Command(*task.Command, task.Arguments...)
-			return 0
-		}
-		configManager.UseTask(this.ConfigManager, remakeCommand)
+		this.State.Reset()
+		this.initCommand(nil)
 		this.StartProcess()
 	}()
 }
 
 func (this *ProcessRunner) StartProcess() {
-	var getStartTime = func(conf *config.Config, taskId uint) uint {
-		return conf.Tasks[this.Id].StartTime
-	}
-	configStartTime := configManager.UseTask(this.ConfigManager, getStartTime)
-	this.StartTime = new(time.Time)
-	*this.StartTime = time.Now()
-	if err := this.Command.Start(); err != nil {
+	configStartTime := this.TaskConfig.StartTime
+	this.State.StartTime.Set(utils.New(time.Now()))
+	command := this.State.Command.Get()
+	if err := command.Start(); err != nil {
 		this.Output <- output.NewStartFailure(
 			fmt.Sprintf("Command failed to run (%s)", err.Error()),
 		)
 	} else {
 		go func() {
-			this.Command.Wait()
-			this.ExitStatus = new(int)
-			*this.ExitStatus = this.Command.ProcessState.ExitCode()
-			this.StopTime = new(time.Time)
-			*this.StopTime = time.Now()
-			if this.UserStopTime != nil {
-				this.Output <- output.NewStopSuccess(this.HasBeenKilled)
+			command.Wait()
+			this.State.ExitStatus.Set(utils.New(
+				this.State.Command.Get().ProcessState.ExitCode(),
+			))
+			this.State.StopTime.Set(utils.New(time.Now()))
+			if this.State.UserStopTime.Get() != nil {
+				this.Output <- output.NewStopSuccess(state.Use(this.State.HasBeenKilled, utils.Get))
 			}
 		}()
 
 		go func() {
 			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
-			if this.ExitStatus == nil {
+			if this.State.ExitStatus.Get() == nil {
 				this.Output <- output.NewStartSuccess()
-				this.UserStartTime = new(time.Time)
-				*this.UserStartTime = time.Now()
+				this.State.UserStartTime.Set(utils.New(time.Now()))
 			} else {
+				// TODO: Handle retry attempts
 				this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
 			}
 		}()
@@ -218,66 +238,69 @@ func (this *ProcessRunner) StartProcess() {
 func (this *ProcessRunner) StatusProcess() {
 	status := ""
 	switch {
-	case this.StopTime != nil:
-		var getExitStatus = func(conf *config.Config, taskId uint) int {
-			return conf.Tasks[taskId].ExpectedExitStatus
-		}
-		expectedExitStatus := configManager.UseTask(this.ConfigManager, getExitStatus)
-		if *this.ExitStatus == expectedExitStatus {
-			status += "SUCCESS "
-		} else {
-			status += "FAILURE "
-		}
-		status += fmt.Sprint(*this.ExitStatus)
-		if this.HasBeenKilled {
+	case this.State.StopTime.Get() != nil:
+		expectedExitStatus := this.TaskConfig.ExpectedExitStatus
+		status += state.Use(this.State.ExitStatus, func(value *int) string {
+			result := ""
+			if *value == expectedExitStatus {
+				result += "SUCCESS "
+			} else {
+				result += "FAILURE "
+			}
+			result += fmt.Sprint(*value)
+			return result
+		})
+		if this.State.HasBeenKilled.Get() {
 			status += " KILLED"
-		} else if this.UserStopTime != nil {
+		} else if this.State.UserStopTime.Get() != nil {
 			status += " STOPPED"
 		}
-	case this.StartTime == nil:
-		status = "NOT_STARTED"
-	case this.UserStartTime == nil:
-		status = "STARTING"
+	case this.State.StartTime.Get() == nil:
+		status += "NOT_STARTED"
+	case this.State.UserStartTime.Get() == nil:
+		status += "STARTING"
 	default:
-		status = "RUNNING"
+		status += "RUNNING"
 	}
 	this.Output <- output.NewStatus(this.Id, status)
 }
 
 func (this *ProcessRunner) StopProcess() {
-	configStopSignal, configStopTime := this.GetConfigStopInfo()
-	this.UserStopTime = new(time.Time)
-	*this.UserStopTime = time.Now()
-	this.Command.Process.Signal(SIGNAL_TABLE[configStopSignal])
+	this.State.UserStopTime.Set(utils.New(time.Now()))
+	command := this.State.Command.Get()
+	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
 	go func() {
-		time.Sleep(time.Duration(configStopTime) * time.Millisecond)
-		if this.ExitStatus != nil {
+		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
+		if this.State.ExitStatus.Get() != nil {
 			return
 		}
-		this.HasBeenKilled = true
-		this.Command.Process.Kill()
+		this.State.HasBeenKilled.Set(true)
+		command.Process.Kill()
 	}()
-
 }
 
 func (this *ProcessRunner) Run() {
 	defer this.close()
 	for {
-		select {
-		case req := <-this.Input:
+		if req, ok := <-this.Input; !ok {
+			// Input channel has been closed
+			return
+		} else {
 			switch req.(type) {
 
 			case input.Status:
 				this.StatusProcess()
 
 			case input.Start:
-				if this.UserStopTime != nil {
+				if this.State.UserStopTime.Get() != nil {
 					this.Output <- output.NewStartFailure(ERROR_START_STOPPED)
 					break
-				} else if this.HasBeenKilled {
+				}
+				if this.State.HasBeenKilled.Get() {
 					this.Output <- output.NewStartFailure(ERROR_START_KILLED)
 					break
-				} else if this.StartTime != nil  {
+				}
+				if this.State.StartTime.Get() != nil {
 					this.Output <- output.NewStartFailure(ERROR_START_ALREADY_STARTED)
 					break
 				}
@@ -287,6 +310,7 @@ func (this *ProcessRunner) Run() {
 			case input.Restart:
 				this.RestartProcess()
 			case input.Shutdown:
+				return
 			}
 		}
 	}

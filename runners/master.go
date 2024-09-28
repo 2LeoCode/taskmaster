@@ -1,8 +1,9 @@
 package runners
 
 import (
+	"sync"
+
 	"taskmaster/config"
-	"taskmaster/config/manager"
 	"taskmaster/messages/helpers"
 	"taskmaster/messages/master/input"
 	"taskmaster/messages/master/output"
@@ -13,7 +14,7 @@ import (
 )
 
 type MasterRunner struct {
-	ConfigManager *configManager.Master
+	ConfigManager *config.Manager
 
 	Input  <-chan input.Message
 	Output chan<- output.Message
@@ -21,10 +22,12 @@ type MasterRunner struct {
 	Tasks             []*TaskRunner
 	LocalTasksOutput  <-chan utils.Pair[uint, taskOutput.Message]
 	GlobalTasksOutput <-chan []taskOutput.Message
+
+	taskInputs []chan<- taskInput.Message
 }
 
-func NewMasterRunner(manager *configManager.Master, input <-chan input.Message, output chan<- output.Message) (*MasterRunner, error) {
-	nTasks := configManager.UseMaster(manager, func(config *config.Config) int { return len(config.Tasks) })
+func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<- output.Message) (*MasterRunner, error) {
+	nTasks := config.Use(manager, func(config *config.Config) int { return len(config.Tasks) })
 
 	taskInputs := make([]chan taskInput.Message, nTasks)
 	taskOutputs := make([]chan taskOutput.Message, nTasks)
@@ -34,29 +37,34 @@ func NewMasterRunner(manager *configManager.Master, input <-chan input.Message, 
 
 	instance := &MasterRunner{
 		ConfigManager:     manager,
-		Input:             input,
-		Output:            output,
+		Input:             in,
+		Output:            out,
 		Tasks:             make([]*TaskRunner, nTasks),
 		LocalTasksOutput:  localTasksOutput,
 		GlobalTasksOutput: globalTasksOutput,
+		taskInputs:        utils.Transform(taskInputs, func(_ int, ch *chan taskInput.Message) chan<- taskInput.Message { return *ch }),
 	}
 
 	for i := range instance.Tasks {
 		taskInputs[i] = make(chan taskInput.Message)
 		taskOutputs[i] = make(chan taskOutput.Message)
-		if task, err := newTaskRunner(configManager.NewTask(manager, uint(i)), taskInputs[i], taskOutputs[i]); err != nil {
+		if task, err := newTaskRunner(manager, uint(i), taskInputs[i], taskOutputs[i]); err != nil {
 			return nil, err
 		} else {
 			instance.Tasks[i] = task
 		}
 	}
 
-	manager.Subscribe(func(config, prev *config.Config) state.StateCleanupFn {
-		// On config reload, to implement here
-		return func() {}
-	})
-
 	globalOutputs := make([]chan taskOutput.Message, len(taskOutputs))
+
+	var wg sync.WaitGroup
+	wg.Add(len(taskOutputs))
+
+	go func() {
+		wg.Wait()
+		close(localTasksOutput)
+	}()
+
 	for i, out := range taskOutputs {
 		globalOutputs[i] = make(chan taskOutput.Message)
 		i := i
@@ -70,8 +78,16 @@ func NewMasterRunner(manager *configManager.Master, input <-chan input.Message, 
 					globalOutputs[i] <- msg
 				}
 			}
+			close(globalOutputs[i])
+			wg.Done()
 		}()
 	}
+
+	manager.Subscribe(func(config, prev *config.Config) (state.StateCleanupFn, error) {
+		// TODO: Handle config reload here
+		return nil, nil
+	})
+
 	go func() {
 		chunk := make([]taskOutput.Message, len(globalOutputs))
 		for {
@@ -86,18 +102,23 @@ func NewMasterRunner(manager *configManager.Master, input <-chan input.Message, 
 			globalTasksOutput <- chunk
 		}
 	}()
-
 	return instance, nil
 }
 
+func (this *MasterRunner) close() {
+	for _, ch := range this.taskInputs {
+		close(ch)
+	}
+	close(this.Output)
+}
+
 func (this *MasterRunner) Run() {
+	defer this.close()
 	for _, task := range this.Tasks {
 		go task.Run()
 	}
 
 	go func() {
-		defer close(this.Output)
-
 		for {
 			select {
 
@@ -152,8 +173,8 @@ func (this *MasterRunner) Run() {
 		switch req.(type) {
 
 		case input.Status:
-			for _, task := range this.Tasks {
-				task.Input <- taskInput.NewStatus()
+			for i := range this.Tasks {
+				this.taskInputs[i] <- taskInput.NewStatus()
 			}
 
 		case input.StartProcess:
@@ -166,7 +187,7 @@ func (this *MasterRunner) Run() {
 				)
 				break
 			}
-			this.Tasks[req.TaskId()].Input <- taskInput.NewStartProcess(req.ProcessId())
+			this.taskInputs[req.TaskId()] <- taskInput.NewStartProcess(req.ProcessId())
 
 		case input.StopProcess:
 			req := req.(input.StopProcess)
@@ -178,7 +199,7 @@ func (this *MasterRunner) Run() {
 				)
 				break
 			}
-			this.Tasks[req.TaskId()].Input <- taskInput.NewStopProcess(req.ProcessId())
+			this.taskInputs[req.TaskId()] <- taskInput.NewStopProcess(req.ProcessId())
 
 		case input.RestartProcess:
 			req := req.(input.RestartProcess)
@@ -190,15 +211,20 @@ func (this *MasterRunner) Run() {
 				)
 				break
 			}
-			this.Tasks[req.TaskId()].Input <- taskInput.NewRestartProcess(req.ProcessId())
+			this.taskInputs[req.TaskId()] <- taskInput.NewRestartProcess(req.ProcessId())
 
 		case input.Shutdown:
-			for _, task := range this.Tasks {
-				task.Input <- taskInput.NewShutdown()
+			for i := range this.Tasks {
+				this.taskInputs[i] <- taskInput.NewShutdown()
 			}
+			return
 
 		case input.Reload:
-			go this.ConfigManager.Load()
+			go func() {
+				if err := this.ConfigManager.Load(); err != nil {
+					this.Output <- output.NewReloadFailure(err.Error())
+				}
+			}()
 
 		default:
 			this.Output <- output.NewBadRequest()

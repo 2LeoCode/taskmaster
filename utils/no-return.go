@@ -1,10 +1,10 @@
 package utils
 
-type void struct{}
+type Void struct{}
 
-func NoReturn(callback func()) func() void {
-	return func() void {
+func NoReturn(callback func()) func() Void {
+	return func() Void {
 		callback()
-		return void{}
+		return Void{}
 	}
 }

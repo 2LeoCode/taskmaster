@@ -26,7 +26,7 @@ func GoTransform[T, U any](slice []T, mapFunction func(int, *T) U) []U {
 		value := value
 
 		// Call the function inside the goroutine and write the index and result
-		// to our channel.
+		// to our channel using a Pair.
 		go func() {
 			pipe <- NewPair(i, mapFunction(i, &value))
 		}()
