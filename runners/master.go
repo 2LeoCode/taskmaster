@@ -24,7 +24,10 @@ type MasterRunner struct {
 	GlobalTasksOutput <-chan []taskOutput.Message
 
 	taskInputs []chan<- taskInput.Message
+	stopSignal chan StopSignal
 }
+
+type StopSignal struct{}
 
 func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<- output.Message) (*MasterRunner, error) {
 	nTasks := config.Use(manager, func(config *config.Config) int { return len(config.Tasks) })
@@ -43,6 +46,7 @@ func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<
 		LocalTasksOutput:  localTasksOutput,
 		GlobalTasksOutput: globalTasksOutput,
 		taskInputs:        utils.Transform(taskInputs, func(_ int, ch *chan taskInput.Message) chan<- taskInput.Message { return *ch }),
+		stopSignal:        make(chan StopSignal),
 	}
 
 	for i := range instance.Tasks {
@@ -86,7 +90,8 @@ func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<
 	manager.Subscribe(func(conf, prevConf *config.Config) (state.StateCleanupFn, error) {
 		if conf.LogDir != prevConf.LogDir || len(conf.Tasks) != len(prevConf.Tasks) {
 			// Reload master
-			// TODO: forward shutdown message to tasks
+			instance.forwardGlobalMessage(taskInput.NewShutdown())
+			instance.stopSignal <- StopSignal{}
 			if newInstance, err := NewMasterRunner(manager, in, out); err != nil {
 				return nil, err
 			} else {
@@ -131,6 +136,7 @@ func (this *MasterRunner) close() {
 		close(ch)
 	}
 	close(this.Output)
+	close(this.stopSignal)
 }
 
 func (this *MasterRunner) forwardGlobalMessage(message interface {
@@ -199,66 +205,73 @@ func (this *MasterRunner) Run() {
 		}
 	}()
 
-	for req := range this.Input {
-		switch req.(type) {
-
-		case input.Status:
-			for i := range this.Tasks {
-				this.taskInputs[i] <- taskInput.NewStatus()
-			}
-
-		case input.StartProcess:
-			req := req.(input.StartProcess)
-			if req.TaskId() >= uint(len(this.Tasks)) {
-				this.Output <- output.NewStartProcessFailure(
-					req.TaskId(),
-					req.ProcessId(),
-					"Invalid task ID",
-				)
-				break
-			}
-			this.taskInputs[req.TaskId()] <- taskInput.NewStartProcess(req.ProcessId())
-
-		case input.StopProcess:
-			req := req.(input.StopProcess)
-			if req.TaskId() >= uint(len(this.Tasks)) {
-				this.Output <- output.NewStopProcessFailure(
-					req.TaskId(),
-					req.ProcessId(),
-					"Invalid task ID",
-				)
-				break
-			}
-			this.taskInputs[req.TaskId()] <- taskInput.NewStopProcess(req.ProcessId())
-
-		case input.RestartProcess:
-			req := req.(input.RestartProcess)
-			if req.TaskId() >= uint(len(this.Tasks)) {
-				this.Output <- output.NewRestartProcessFailure(
-					req.TaskId(),
-					req.ProcessId(),
-					"Invalid task ID",
-				)
-				break
-			}
-			this.taskInputs[req.TaskId()] <- taskInput.NewRestartProcess(req.ProcessId())
-
-		case input.Shutdown:
-			for i := range this.Tasks {
-				this.taskInputs[i] <- taskInput.NewShutdown()
-			}
+	for {
+		select {
+		case <-this.stopSignal:
 			return
 
-		case input.Reload:
-			go func() {
-				if err := this.ConfigManager.Load(); err != nil {
-					this.Output <- output.NewReloadFailure(err.Error())
+		case req, ok := <-this.Input:
+			if !ok {
+				return
+			}
+
+			switch req.(type) {
+
+			case input.Status:
+				this.forwardGlobalMessage(taskInput.NewStatus())
+
+			case input.StartProcess:
+				req := req.(input.StartProcess)
+				if req.TaskId() >= uint(len(this.Tasks)) {
+					this.Output <- output.NewStartProcessFailure(
+						req.TaskId(),
+						req.ProcessId(),
+						"Invalid task ID",
+					)
+					break
 				}
-			}()
+				this.taskInputs[req.TaskId()] <- taskInput.NewStartProcess(req.ProcessId())
 
-		default:
-			this.Output <- output.NewBadRequest()
+			case input.StopProcess:
+				req := req.(input.StopProcess)
+				if req.TaskId() >= uint(len(this.Tasks)) {
+					this.Output <- output.NewStopProcessFailure(
+						req.TaskId(),
+						req.ProcessId(),
+						"Invalid task ID",
+					)
+					break
+				}
+				this.taskInputs[req.TaskId()] <- taskInput.NewStopProcess(req.ProcessId())
 
+			case input.RestartProcess:
+				req := req.(input.RestartProcess)
+				if req.TaskId() >= uint(len(this.Tasks)) {
+					this.Output <- output.NewRestartProcessFailure(
+						req.TaskId(),
+						req.ProcessId(),
+						"Invalid task ID",
+					)
+					break
+				}
+				this.taskInputs[req.TaskId()] <- taskInput.NewRestartProcess(req.ProcessId())
+
+			case input.Shutdown:
+				this.forwardGlobalMessage(taskInput.NewShutdown())
+				return
+
+			case input.Reload:
+				go func() {
+					if err := this.ConfigManager.Load(); err != nil {
+						this.Output <- output.NewReloadFailure(err.Error())
+					}
+				}()
+
+			default:
+				this.Output <- output.NewBadRequest()
+
+			}
 		}
+
 	}
 }
