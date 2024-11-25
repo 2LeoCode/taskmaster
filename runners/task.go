@@ -24,7 +24,8 @@ type TaskRunner struct {
 	LocalProcessesOutput  <-chan utils.Pair[uint, processOutput.Message]
 	GlobalProcessesOutput <-chan []processOutput.Message
 
-	processInputs []chan<- processInput.Message
+	processInputs  []chan processInput.Message
+	processOutputs []chan processOutput.Message
 }
 
 type buildConfig struct {
@@ -49,7 +50,8 @@ func newTaskRunner(manager *config.Manager, id uint, input <-chan input.Message,
 		Processes:             make([]*ProcessRunner, conf.Instances),
 		LocalProcessesOutput:  localProcessesOutput,
 		GlobalProcessesOutput: globalProcessesOutput,
-		processInputs:         utils.Transform(processInputs, func(_ int, ch *chan processInput.Message) chan<- processInput.Message { return *ch }),
+		processInputs:         processInputs,
+		processOutputs:        processOutputs,
 	}
 
 	for i := range instance.Processes {
@@ -108,9 +110,9 @@ func newTaskRunner(manager *config.Manager, id uint, input <-chan input.Message,
 }
 
 func (this *TaskRunner) close() {
-	close(this.Output)
-	for _, ch := range this.processInputs {
-		close(ch)
+	for i := range this.Processes {
+		close(this.processInputs[i])
+		close(this.processOutputs[i])
 	}
 }
 

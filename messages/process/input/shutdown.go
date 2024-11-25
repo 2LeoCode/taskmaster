@@ -4,13 +4,13 @@ import "taskmaster/messages/helpers"
 
 type Shutdown interface {
 	Message
-	helpers.Local
+	helpers.Global
 	isShutdown() bool
 }
 
 type shutdown struct {
 	message
-	helpers.BaseLocal
+	helpers.BaseGlobal
 }
 
 func (*shutdown) isShutdown() bool { return true }

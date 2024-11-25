@@ -65,6 +65,16 @@ type ProcessState struct {
 	Command       *state.State[*exec.Cmd]
 }
 
+func (this *ProcessState) Close() {
+	this.StartTime.Close()
+	this.UserStartTime.Close()
+	this.UserStopTime.Close()
+	this.StopTime.Close()
+	this.ExitStatus.Close()
+	this.HasBeenKilled.Close()
+	this.Command.Close()
+}
+
 func (this *ProcessState) Reset() {
 	*this = *NewProcessState()
 }
@@ -95,8 +105,6 @@ type ProcessRunner struct {
 	Input  <-chan input.Message
 	Output chan<- output.Message
 
-	Events chan string
-
 	State *ProcessState
 }
 
@@ -104,10 +112,12 @@ func (this *ProcessRunner) close() {
 	this.StopProcess()
 	this.StdoutLogFile.Close()
 	this.StderrLogFile.Close()
+	this.State.Close()
 }
 
 func (this *ProcessRunner) initCommand(conf *config.Task) {
 	command := exec.Command(*conf.Command, conf.Arguments...)
+	command.Dir = this.TaskConfig.WorkingDirectory
 	command.Stdout = this.StdoutLogFile
 	command.Stderr = this.StderrLogFile
 	this.State.Command.Set(command)
@@ -163,7 +173,6 @@ func newProcessRunner(manager *config.Manager, taskConfig *config.Task, taskId, 
 		Id:            id,
 		Input:         input,
 		Output:        output,
-		Events:        make(chan string),
 		State:         NewProcessState(),
 	}
 	if err := config.Use(manager, func(conf *config.Config) error {

@@ -83,8 +83,29 @@ func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<
 		}()
 	}
 
-	manager.Subscribe(func(config, prev *config.Config) (state.StateCleanupFn, error) {
-		// TODO: Handle config reload here
+	manager.Subscribe(func(conf, prevConf *config.Config) (state.StateCleanupFn, error) {
+		if conf.LogDir != prevConf.LogDir || len(conf.Tasks) != len(prevConf.Tasks) {
+			// Reload master
+			// TODO: forward shutdown message to tasks
+			if newInstance, err := NewMasterRunner(manager, in, out); err != nil {
+				return nil, err
+			} else {
+				*instance = *newInstance
+			}
+		} else {
+			// Check which task needs to be reloaded
+
+			for i := range conf.Tasks {
+				if conf.Tasks[i].String() != prevConf.Tasks[i].String() {
+					taskInputs[i] <- taskInput.NewShutdown()
+					if task, err := newTaskRunner(manager, uint(i), taskInputs[i], taskOutputs[i]); err != nil {
+						return nil, err
+					} else {
+						instance.Tasks[i] = task
+					}
+				}
+			}
+		}
 		return nil, nil
 	})
 
@@ -110,6 +131,15 @@ func (this *MasterRunner) close() {
 		close(ch)
 	}
 	close(this.Output)
+}
+
+func (this *MasterRunner) forwardGlobalMessage(message interface {
+	helpers.Global
+	taskInput.Message
+}) {
+	for _, ch := range this.taskInputs {
+		ch <- message
+	}
 }
 
 func (this *MasterRunner) Run() {
