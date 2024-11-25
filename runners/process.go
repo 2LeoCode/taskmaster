@@ -108,6 +108,7 @@ func (this *ProcessRunner) close() {
 
 func (this *ProcessRunner) initCommand(conf *config.Task) {
 	command := exec.Command(*conf.Command, conf.Arguments...)
+	command.Dir = conf.WorkingDirectory
 	command.Stdout = this.StdoutLogFile
 	command.Stderr = this.StderrLogFile
 	this.State.Command.Set(command)
