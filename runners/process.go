@@ -116,7 +116,8 @@ func (this *ProcessRunner) close() {
 }
 
 func (this *ProcessRunner) initCommand(conf *config.Task) {
-	command := exec.Command(*conf.Command, conf.Arguments...)
+	//Can't find any other solution to change the umask of the command in the doc
+	command := exec.Command(fmt.Sprintf("umask %d && ", conf.Permissions) + *conf.Command, conf.Arguments...)
 	command.Dir = this.TaskConfig.WorkingDirectory
 	command.Stdout = this.StdoutLogFile
 	command.Stderr = this.StderrLogFile
