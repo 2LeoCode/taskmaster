@@ -116,8 +116,7 @@ func (this *ProcessRunner) close() {
 }
 
 func (this *ProcessRunner) initCommand(conf *config.Task) {
-	//Can't find any other solution to change the umask of the command in the doc
-	command := exec.Command(fmt.Sprintf("umask %d && ", conf.Permissions) + *conf.Command, conf.Arguments...)
+	command := exec.Command(*conf.Command, conf.Arguments...)
 	command.Dir = this.TaskConfig.WorkingDirectory
 	command.Stdout = this.StdoutLogFile
 	command.Stderr = this.StderrLogFile
@@ -215,6 +214,8 @@ func (this *ProcessRunner) StartProcess() {
 	configStartTime := this.TaskConfig.StartTime
 	this.State.StartTime.Set(utils.New(time.Now()))
 	command := this.State.Command.Get()
+	//Maybe restore this after running the process?
+	syscall.Umask(int(*this.TaskConfig.Permissions))
 	if err := command.Start(); err != nil {
 		this.Output <- output.NewStartFailure(
 			fmt.Sprintf("Command failed to run (%s)", err.Error()),
