@@ -1,13 +1,17 @@
 package input
 
+import "taskmaster/messages/helpers"
+
 type RestartProcess interface {
 	Message
+	helpers.Local
 	isRestartProcess() bool
 	ProcessId() uint
 }
 
 type restartProcess struct {
 	message
+	helpers.BaseLocal
 	processId uint
 }
 

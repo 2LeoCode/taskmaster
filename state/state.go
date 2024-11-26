@@ -61,16 +61,16 @@ func (this *State[T]) Subscribe(hook StateSubscribeFn[T]) {
 	}))
 }
 
-func (this *State[T]) Close(state *State[T]) {
-	withLock(state, utils.NoReturn(func() {
-		for _, cleanup := range state.cleanups {
+func (this *State[T]) Close() {
+	withLock(this, utils.NoReturn(func() {
+		for _, cleanup := range this.cleanups {
 			if cleanup != nil {
 				cleanup()
 			}
 		}
 	}))
-	close(state.acquirer)
-	close(state.releaser)
+	close(this.acquirer)
+	close(this.releaser)
 }
 
 func NewState[T any](value T) *State[T] {
