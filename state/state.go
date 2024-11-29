@@ -52,7 +52,7 @@ func (this *State[T]) Set(value T) error {
 }
 
 func (this *State[T]) Get() T {
-	return Use(this, utils.Get)
+	return Use(this, utils.Get[T])
 }
 
 func (this *State[T]) Subscribe(hook StateSubscribeFn[T]) {
@@ -85,7 +85,11 @@ func NewState[T any](value T) *State[T] {
 	}
 
 	go func() {
-		defer close(lock)
+		defer func() {
+			close(lock)
+			close(acquirer)
+			close(releaser)
+		}()
 		for {
 			if _, ok := <-acquirer; !ok {
 				break

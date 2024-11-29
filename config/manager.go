@@ -1,32 +1,41 @@
 package config
 
 import (
-	"taskmaster/state"
+	"taskmaster/atom"
 )
 
-type Manager struct {
-	state *state.State[*Config]
-	path  string
+type Manager interface {
+	Get() (value *Config)
+	Subscribe(hook atom.AtomSubscriberFunc[*Config])
+	Load() error
 }
 
-func Use[R any](manager *Manager, hook state.StateUseFn[*Config, R]) R {
-	return state.Use(manager.state, hook)
+type manager struct {
+	atom atom.Atom[*Config]
+	path string
 }
 
-func (this *Manager) Subscribe(hook state.StateSubscribeFn[*Config]) {
-	this.state.Subscribe(hook)
+func (this *manager) Get() *Config {
+	return this.atom.Get()
 }
 
-func (this *Manager) Load() error {
+func (this *manager) Subscribe(hook atom.AtomSubscriberFunc[*Config]) {
+	this.atom.Subscribe(hook)
+}
+
+func (this *manager) Load() error {
 	if config, err := Parse(this.path); err != nil {
 		return err
 	} else {
-		return this.state.Set(config)
+		if _, err := this.atom.Set(config); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func NewManager(path string) (*Manager, error) {
-	instance := &Manager{path: path, state: state.NewState[*Config](nil)}
+func NewManager(path string) (Manager, error) {
+	instance := &manager{path: path, atom: atom.NewAtom[*Config](nil)}
 	if err := instance.Load(); err != nil {
 		return nil, err
 	}

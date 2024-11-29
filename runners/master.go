@@ -9,12 +9,11 @@ import (
 	"taskmaster/messages/master/output"
 	taskInput "taskmaster/messages/task/input"
 	taskOutput "taskmaster/messages/task/output"
-	"taskmaster/state"
 	"taskmaster/utils"
 )
 
 type MasterRunner struct {
-	ConfigManager *config.Manager
+	ConfigManager config.Manager
 
 	Input  <-chan input.Message
 	Output chan<- output.Message
@@ -23,30 +22,36 @@ type MasterRunner struct {
 	LocalTasksOutput  <-chan utils.Pair[uint, taskOutput.Message]
 	GlobalTasksOutput <-chan []taskOutput.Message
 
-	taskInputs []chan<- taskInput.Message
-	stopSignal chan StopSignal
+	taskInputs         []chan taskInput.Message
+	stopSignal         chan StopSignal
+	everyTaskExited    chan exitEvent
+	specificTaskExited chan exitEvent
 }
 
 type StopSignal struct{}
 
-func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<- output.Message) (*MasterRunner, error) {
-	nTasks := config.Use(manager, func(config *config.Config) int { return len(config.Tasks) })
+func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<- output.Message) (*MasterRunner, error) {
+	conf := manager.Get()
 
-	taskInputs := make([]chan taskInput.Message, nTasks)
-	taskOutputs := make([]chan taskOutput.Message, nTasks)
+	taskInputs := make([]chan taskInput.Message, len(conf.Tasks))
+	taskOutputs := make([]chan taskOutput.Message, len(conf.Tasks))
 
 	localTasksOutput := make(chan utils.Pair[uint, taskOutput.Message])
 	globalTasksOutput := make(chan []taskOutput.Message)
 
+	tasks := make([]*TaskRunner, len(conf.Tasks))
+
 	instance := &MasterRunner{
-		ConfigManager:     manager,
-		Input:             in,
-		Output:            out,
-		Tasks:             make([]*TaskRunner, nTasks),
-		LocalTasksOutput:  localTasksOutput,
-		GlobalTasksOutput: globalTasksOutput,
-		taskInputs:        utils.Transform(taskInputs, func(_ int, ch *chan taskInput.Message) chan<- taskInput.Message { return *ch }),
-		stopSignal:        make(chan StopSignal),
+		ConfigManager:      manager,
+		Input:              in,
+		Output:             out,
+		Tasks:              tasks,
+		LocalTasksOutput:   localTasksOutput,
+		GlobalTasksOutput:  globalTasksOutput,
+		taskInputs:         taskInputs,
+		stopSignal:         make(chan StopSignal),
+		everyTaskExited:    make(chan exitEvent),
+		specificTaskExited: make(chan exitEvent),
 	}
 
 	for i := range instance.Tasks {
@@ -87,13 +92,15 @@ func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<
 		}()
 	}
 
-	manager.Subscribe(func(conf, prevConf *config.Config) (state.StateCleanupFn, error) {
+	manager.Subscribe(func(conf, prevConf *config.Config) error {
+		println("subscriber triggered")
 		if conf.LogDir != prevConf.LogDir || len(conf.Tasks) != len(prevConf.Tasks) {
 			// Reload master
 			instance.forwardGlobalMessage(taskInput.NewShutdown())
+			<-instance.everyTaskExited
 			instance.stopSignal <- StopSignal{}
 			if newInstance, err := NewMasterRunner(manager, in, out); err != nil {
-				return nil, err
+				return err
 			} else {
 				*instance = *newInstance
 			}
@@ -102,16 +109,18 @@ func NewMasterRunner(manager *config.Manager, in <-chan input.Message, out chan<
 
 			for i := range conf.Tasks {
 				if conf.Tasks[i].String() != prevConf.Tasks[i].String() {
-					taskInputs[i] <- taskInput.NewShutdown()
+					taskInputs[i] <- taskInput.NewLocalShutdown()
+					<-instance.specificTaskExited
+					println("task exited")
 					if task, err := newTaskRunner(manager, uint(i), taskInputs[i], taskOutputs[i]); err != nil {
-						return nil, err
+						return err
 					} else {
 						instance.Tasks[i] = task
 					}
 				}
 			}
 		}
-		return nil, nil
+		return nil
 	})
 
 	go func() {
@@ -182,6 +191,9 @@ func (this *MasterRunner) Run() {
 						local.Second.(taskOutput.RestartProcess),
 					)
 
+				case taskOutput.LocalShutdown:
+					this.specificTaskExited <- exitEvent{}
+
 				}
 
 			case global, ok := <-this.GlobalTasksOutput:
@@ -199,7 +211,8 @@ func (this *MasterRunner) Run() {
 							},
 						),
 					)
-
+				case taskOutput.Shutdown:
+					this.everyTaskExited <- exitEvent{}
 				}
 			}
 		}
@@ -218,6 +231,7 @@ func (this *MasterRunner) Run() {
 			switch req.(type) {
 
 			case input.Status:
+				println("forwarding Status")
 				this.forwardGlobalMessage(taskInput.NewStatus())
 
 			case input.StartProcess:
@@ -258,6 +272,7 @@ func (this *MasterRunner) Run() {
 
 			case input.Shutdown:
 				this.forwardGlobalMessage(taskInput.NewShutdown())
+				<-this.everyTaskExited
 				return
 
 			case input.Reload:

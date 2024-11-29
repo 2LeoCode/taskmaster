@@ -12,8 +12,10 @@ import (
 	"taskmaster/utils"
 )
 
+type exitEvent struct{}
+
 type TaskRunner struct {
-	Config *config.Task
+	Config config.Task
 
 	Id uint
 
@@ -26,6 +28,8 @@ type TaskRunner struct {
 
 	processInputs  []chan processInput.Message
 	processOutputs []chan processOutput.Message
+
+	exitEvent chan exitEvent
 }
 
 type buildConfig struct {
@@ -33,9 +37,8 @@ type buildConfig struct {
 	instances uint
 }
 
-func newTaskRunner(manager *config.Manager, id uint, input <-chan input.Message, output chan<- output.Message) (*TaskRunner, error) {
-	conf := config.Use(manager, func(cfg *config.Config) *config.Task { return &cfg.Tasks[id] })
-
+func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, output chan<- output.Message) (*TaskRunner, error) {
+	conf := manager.Get().Tasks[id]
 	processInputs := make([]chan processInput.Message, conf.Instances)
 	processOutputs := make([]chan processOutput.Message, conf.Instances)
 
@@ -52,12 +55,13 @@ func newTaskRunner(manager *config.Manager, id uint, input <-chan input.Message,
 		GlobalProcessesOutput: globalProcessesOutput,
 		processInputs:         processInputs,
 		processOutputs:        processOutputs,
+		exitEvent:             make(chan exitEvent),
 	}
 
 	for i := range instance.Processes {
 		processInputs[i] = make(chan processInput.Message)
 		processOutputs[i] = make(chan processOutput.Message)
-		if process, err := newProcessRunner(manager, conf, id, uint(i), processInputs[i], processOutputs[i]); err != nil {
+		if process, err := newProcessRunner(manager, id, uint(i), processInputs[i], processOutputs[i]); err != nil {
 			return nil, err
 		} else {
 			instance.Processes[i] = process
@@ -133,13 +137,12 @@ func (this *TaskRunner) Run() {
 
 	go func() {
 
-	loop:
 		for {
 			select {
 
 			case local, ok := <-this.LocalProcessesOutput:
 				if !ok {
-					break loop
+					return
 				}
 				switch local.Second.(type) {
 
@@ -164,7 +167,7 @@ func (this *TaskRunner) Run() {
 
 			case global, ok := <-this.GlobalProcessesOutput:
 				if !ok {
-					break loop
+					return
 				}
 				switch global[0].(type) {
 
@@ -180,6 +183,9 @@ func (this *TaskRunner) Run() {
 						),
 					)
 
+				case processOutput.Shutdown:
+					this.exitEvent <- exitEvent{}
+
 				}
 
 			}
@@ -187,9 +193,11 @@ func (this *TaskRunner) Run() {
 	}()
 
 	for req := range this.Input {
+		println("received message")
 		switch req.(type) {
 
 		case input.Status:
+			println("TASK: received STATUS")
 			this.forwardGlobalMessage(processInput.NewStatus())
 
 		case input.StartProcess:
@@ -225,8 +233,16 @@ func (this *TaskRunner) Run() {
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewRestart()
 
+		case input.LocalShutdown:
+			this.forwardGlobalMessage(processInput.NewShutdown())
+			<-this.exitEvent
+			this.Output <- output.NewLocalShutdown()
+			return
+
 		case input.Shutdown:
 			this.forwardGlobalMessage(processInput.NewShutdown())
+			<-this.exitEvent
+			this.Output <- output.NewShutdown()
 			return
 
 		}

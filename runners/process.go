@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
+	"taskmaster/atom"
 	"taskmaster/config"
 	"taskmaster/messages/process/input"
 	"taskmaster/messages/process/output"
-	"taskmaster/state"
 	"taskmaster/utils"
 )
 
@@ -54,47 +54,37 @@ const ERROR_START_KILLED string = "Process was killed. " + HINT_RESTART
 const ERROR_START_ALREADY_STARTED string = "Process already started. " + HINT_RESTART
 const ERROR_START_STOPPED_EARLY = "Process stopped before the configured time"
 
-type ProcessState struct {
-	StartRetries  *state.State[*uint]
-	UserStartTime *state.State[*time.Time]
-	StartTime     *state.State[*time.Time]
-	UserStopTime  *state.State[*time.Time]
-	StopTime      *state.State[*time.Time]
-	ExitStatus    *state.State[*int]
-	HasBeenKilled *state.State[bool]
-	Command       *state.State[*exec.Cmd]
+type processState struct {
+	startRetries  atom.Atom[*uint]
+	userStartTime atom.Atom[*time.Time]
+	startTime     atom.Atom[*time.Time]
+	userStopTime  atom.Atom[*time.Time]
+	stopTime      atom.Atom[*time.Time]
+	exitStatus    atom.Atom[*int]
+	hasBeenKilled atom.Atom[bool]
+	command       atom.Atom[*exec.Cmd]
 }
 
-func (this *ProcessState) Close() {
-	this.StartTime.Close()
-	this.UserStartTime.Close()
-	this.UserStopTime.Close()
-	this.StopTime.Close()
-	this.ExitStatus.Close()
-	this.HasBeenKilled.Close()
-	this.Command.Close()
-}
-
-func (this *ProcessState) Reset() {
+func (this *processState) Reset() {
 	*this = *NewProcessState()
 }
 
-func NewProcessState() *ProcessState {
-	return &ProcessState{
-		StartRetries:  state.NewState[*uint](nil),
-		UserStartTime: state.NewState[*time.Time](nil),
-		StartTime:     state.NewState[*time.Time](nil),
-		UserStopTime:  state.NewState[*time.Time](nil),
-		StopTime:      state.NewState[*time.Time](nil),
-		ExitStatus:    state.NewState[*int](nil),
-		HasBeenKilled: state.NewState(false),
-		Command:       state.NewState[*exec.Cmd](nil),
+func NewProcessState() *processState {
+	return &processState{
+		startRetries:  atom.NewAtom[*uint](nil),
+		userStartTime: atom.NewAtom[*time.Time](nil),
+		startTime:     atom.NewAtom[*time.Time](nil),
+		userStopTime:  atom.NewAtom[*time.Time](nil),
+		stopTime:      atom.NewAtom[*time.Time](nil),
+		exitStatus:    atom.NewAtom[*int](nil),
+		hasBeenKilled: atom.NewAtom[bool](false),
+		command:       atom.NewAtom[*exec.Cmd](nil),
 	}
 }
 
 type ProcessRunner struct {
-	ConfigManager *config.Manager
-	TaskConfig    *config.Task
+	ConfigManager config.Manager
+	TaskConfig    config.Task
 
 	TaskId uint
 	Id     uint
@@ -105,22 +95,22 @@ type ProcessRunner struct {
 	Input  <-chan input.Message
 	Output chan<- output.Message
 
-	State *ProcessState
+	State *processState
 }
 
 func (this *ProcessRunner) close() {
 	this.StopProcess()
+	this.State.command.Get().Wait()
 	this.StdoutLogFile.Close()
 	this.StderrLogFile.Close()
-	this.State.Close()
 }
 
-func (this *ProcessRunner) initCommand(conf *config.Task) {
+func (this *ProcessRunner) initCommand(conf config.Task) {
 	command := exec.Command(*conf.Command, conf.Arguments...)
 	command.Dir = this.TaskConfig.WorkingDirectory
 	command.Stdout = this.StdoutLogFile
 	command.Stderr = this.StderrLogFile
-	this.State.Command.Set(command)
+	this.State.command.Set(command)
 }
 
 type OutputSource int
@@ -165,55 +155,52 @@ func getLogFile(source OutputSource, logConfig string, conf *config.Config, task
 	)
 }
 
-func newProcessRunner(manager *config.Manager, taskConfig *config.Task, taskId, id uint, input <-chan input.Message, output chan<- output.Message) (*ProcessRunner, error) {
+func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan input.Message, output chan<- output.Message) (*ProcessRunner, error) {
+	conf := manager.Get()
+	taskConf := conf.Tasks[taskId]
 	instance := &ProcessRunner{
 		ConfigManager: manager,
-		TaskConfig:    taskConfig,
+		TaskConfig:    taskConf,
 		TaskId:        taskId,
 		Id:            id,
 		Input:         input,
 		Output:        output,
 		State:         NewProcessState(),
 	}
-	if err := config.Use(manager, func(conf *config.Config) error {
-		if stdoutLogFile, err := getLogFile(STDOUT, taskConfig.Stdout, conf, taskId, id); err != nil {
-			return err
-		} else if stderrLogFile, err := getLogFile(STDERR, taskConfig.Stderr, conf, taskId, id); err != nil {
-			return err
-		} else {
-			instance.StdoutLogFile = stdoutLogFile
-			instance.StderrLogFile = stderrLogFile
-		}
-		instance.initCommand(taskConfig)
-		return nil
-	}); err != nil {
+	if stdoutLogFile, err := getLogFile(STDOUT, taskConf.Stdout, conf, taskId, id); err != nil {
 		return nil, err
+	} else if stderrLogFile, err := getLogFile(STDERR, taskConf.Stderr, conf, taskId, id); err != nil {
+		return nil, err
+	} else {
+		instance.StdoutLogFile = stdoutLogFile
+		instance.StderrLogFile = stderrLogFile
 	}
-
+	instance.initCommand(taskConf)
 	return instance, nil
 }
 
 func (this *ProcessRunner) RestartProcess() {
-	command := this.State.Command.Get()
+	command := this.State.command.Get()
+	// TODO: do not forget umask for restartProcess
 	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
 	go func() { //Proceed with the function when we know the process has stopped
 		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
-		if exitStatus := this.State.ExitStatus.Get(); exitStatus == nil {
-			this.State.HasBeenKilled.Set(true)
+		if exitStatus := this.State.exitStatus.Get(); exitStatus == nil {
+			this.State.hasBeenKilled.Set(true)
 			command.Process.Kill()
 			command.Process.Wait()
 		}
 		//Remove trace of previous run to prevent conflict with current functions
 		this.State.Reset()
-		this.initCommand(nil)
+		this.initCommand(this.TaskConfig)
 		this.StartProcess()
 	}()
 }
 
 func (this *ProcessRunner) StartProcess() {
 	configStartTime := this.TaskConfig.StartTime
-	this.State.StartTime.Set(utils.New(time.Now()))
-	command := this.State.Command.Get()
+	this.State.startTime.Set(utils.New(time.Now()))
+	command := this.State.command.Get()
 	//Maybe restore this after running the process?
 	syscall.Umask(int(*this.TaskConfig.Permissions))
 	if err := command.Start(); err != nil {
@@ -223,20 +210,20 @@ func (this *ProcessRunner) StartProcess() {
 	} else {
 		go func() {
 			command.Wait()
-			this.State.ExitStatus.Set(utils.New(
-				this.State.Command.Get().ProcessState.ExitCode(),
+			this.State.exitStatus.Set(utils.New(
+				this.State.command.Get().ProcessState.ExitCode(),
 			))
-			this.State.StopTime.Set(utils.New(time.Now()))
-			if this.State.UserStopTime.Get() != nil {
-				this.Output <- output.NewStopSuccess(state.Use(this.State.HasBeenKilled, utils.Get))
+			this.State.stopTime.Set(utils.New(time.Now()))
+			if this.State.userStopTime.Get() != nil {
+				this.Output <- output.NewStopSuccess(this.State.hasBeenKilled.Get())
 			}
 		}()
 
 		go func() {
 			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
-			if this.State.ExitStatus.Get() == nil {
+			if this.State.exitStatus.Get() == nil {
 				this.Output <- output.NewStartSuccess()
-				this.State.UserStartTime.Set(utils.New(time.Now()))
+				this.State.userStartTime.Set(utils.New(time.Now()))
 			} else {
 				// TODO: Handle retry attempts
 				this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
@@ -249,26 +236,24 @@ func (this *ProcessRunner) StartProcess() {
 func (this *ProcessRunner) StatusProcess() {
 	status := ""
 	switch {
-	case this.State.StopTime.Get() != nil:
+	case this.State.stopTime.Get() != nil:
 		expectedExitStatus := this.TaskConfig.ExpectedExitStatus
-		status += state.Use(this.State.ExitStatus, func(value *int) string {
-			result := ""
-			if *value == expectedExitStatus {
-				result += "SUCCESS "
-			} else {
-				result += "FAILURE "
-			}
-			result += fmt.Sprint(*value)
-			return result
-		})
-		if this.State.HasBeenKilled.Get() {
+		actualExitStatus := this.State.exitStatus.Get()
+		result := ""
+		if *actualExitStatus == expectedExitStatus {
+			result += "SUCCESS "
+		} else {
+			result += "FAILURE "
+		}
+		result += fmt.Sprint(*actualExitStatus)
+		if this.State.hasBeenKilled.Get() {
 			status += " KILLED"
-		} else if this.State.UserStopTime.Get() != nil {
+		} else if this.State.userStopTime.Get() != nil {
 			status += " STOPPED"
 		}
-	case this.State.StartTime.Get() == nil:
+	case this.State.startTime.Get() == nil:
 		status += "NOT_STARTED"
-	case this.State.UserStartTime.Get() == nil:
+	case this.State.userStartTime.Get() == nil:
 		status += "STARTING"
 	default:
 		status += "RUNNING"
@@ -277,15 +262,17 @@ func (this *ProcessRunner) StatusProcess() {
 }
 
 func (this *ProcessRunner) StopProcess() {
-	this.State.UserStopTime.Set(utils.New(time.Now()))
-	command := this.State.Command.Get()
-	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
+	this.State.userStopTime.Set(utils.New(time.Now()))
+	command := this.State.command.Get()
+	println(SIGNAL_TABLE[this.TaskConfig.StopSignal])
+	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal]) // crash here
 	go func() {
+		println("waiting for process")
 		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
-		if this.State.ExitStatus.Get() != nil {
+		if this.State.exitStatus.Get() != nil {
 			return
 		}
-		this.State.HasBeenKilled.Set(true)
+		this.State.hasBeenKilled.Set(true)
 		command.Process.Kill()
 	}()
 }
@@ -300,27 +287,32 @@ func (this *ProcessRunner) Run() {
 			switch req.(type) {
 
 			case input.Status:
+				println("PROCESS: received STATUS")
 				this.StatusProcess()
 
 			case input.Start:
-				if this.State.UserStopTime.Get() != nil {
+				if this.State.userStopTime.Get() != nil {
 					this.Output <- output.NewStartFailure(ERROR_START_STOPPED)
 					break
 				}
-				if this.State.HasBeenKilled.Get() {
+				if this.State.hasBeenKilled.Get() {
 					this.Output <- output.NewStartFailure(ERROR_START_KILLED)
 					break
 				}
-				if this.State.StartTime.Get() != nil {
+				if this.State.startTime.Get() != nil {
 					this.Output <- output.NewStartFailure(ERROR_START_ALREADY_STARTED)
 					break
 				}
 				this.StartProcess()
+
 			case input.Stop:
 				this.StopProcess()
+
 			case input.Restart:
 				this.RestartProcess()
+
 			case input.Shutdown:
+				defer func() { this.Output <- output.NewShutdown() }()
 				return
 			}
 		}
