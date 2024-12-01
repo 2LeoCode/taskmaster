@@ -1,0 +1,16 @@
+{
+  "$schema": "./tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "hello-world",
+      "command": "pwd",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 2000,
+      "stopSignal": "SIGINT",
+      "workingDirectory": "/tmp"
+    }
+  ],
+  "logDir": "./logs"
+}

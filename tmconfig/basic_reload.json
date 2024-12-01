@@ -1,0 +1,17 @@
+{
+  "$schema": "./tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "hello-world-reload",
+      "command": "bash",
+      "arguments": ["-c", "sleep 50; echo $HELLO"],
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 2000,
+      "stopSignal": "SIGINT",
+      "stdout": "ignore"
+    }
+  ],
+  "logDir": "./logs"
+}
