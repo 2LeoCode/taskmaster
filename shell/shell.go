@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"taskmaster/atom"
 	"taskmaster/messages/helpers"
 	"taskmaster/messages/master/input"
 	"taskmaster/messages/master/output"
@@ -21,14 +23,23 @@ reload: reload configuration file (restart programs only if needed)
 shutdown: stop all processes and taskmaster`
 
 func StartShell(in <-chan output.Message, out chan<- input.Message) {
-	defer close(out)
+	var reloadInProgress sync.WaitGroup
+	var commandOk sync.WaitGroup
+
+	shouldStop := atom.NewAtom(false)
+
+	defer func() {
+		shouldStop.Set(true)
+		close(out)
+	}()
 	commands := make(chan []string)
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(bufio.ScanLines)
 
 	go func() {
-		for {
-			print("> ")
+		for !shouldStop.Get() {
+			reloadInProgress.Wait()
+			fmt.Print("> ")
 			if ok := scanner.Scan(); !ok {
 				commands <- []string{"shutdown"}
 				break
@@ -39,7 +50,9 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			if len(tokens) == 0 {
 				continue
 			}
+			commandOk.Add(1)
 			commands <- tokens
+			commandOk.Wait()
 		}
 	}()
 
@@ -93,14 +106,17 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 				out <- input.NewRestartProcess(uint(taskId), uint(processId))
 
 			case "reload":
+				reloadInProgress.Add(1)
 				out <- input.NewReload()
 
 			case "shutdown":
 				out <- input.NewShutdown()
+				return
 
 			default:
 				fmt.Printf("invalid command: %s (type `help` to get a list of available commands)\n", cmd[0])
 			}
+			commandOk.Done()
 
 		case res := <-in:
 			print("\r  \r")
@@ -144,6 +160,8 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 				}
 
 			case output.Reload:
+				println("reload done")
+				reloadInProgress.Done()
 				switch res.(type) {
 				case helpers.Success:
 					println("Successfully reloaded configuration.")

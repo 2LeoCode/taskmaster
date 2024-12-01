@@ -24,7 +24,7 @@ type Task struct {
 	StartAtLaunch      bool
 	Instances          uint
 	Restart            string
-	RestartAttempts    uint
+	RestartAttempts    int
 	ExpectedExitStatus int
 	StartTime          uint
 	StopTime           uint
@@ -203,7 +203,7 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	restartValues := []string{"always", "never", "on-failure", "unless-stopped"}
+	restartValues := []string{"always", "never", "on-failure"}
 	stopSignalValues := []string{"SIGINT", "SIGQUIT", "SIGTERM", "SIGUSR1", "SIGUSR2", "SIGSTOP", "SIGTSTP"}
 	stdioValues := []string{"ignore", "inherit", "redirect"}
 
@@ -212,7 +212,7 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 		return newTaskMissingPropertyError("name")
 
 	case regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(*task.Name) == false:
-		return newTaskInvalidPropertyError("name", *task.Name, "must match the pattern /^[a-zA-Z0-9_-]$/")
+		return newTaskInvalidPropertyError("name", *task.Name, "must match the pattern ^[a-zA-Z0-9_-]+$")
 
 	case task.Command == nil:
 		return newTaskMissingPropertyError("command")
@@ -234,6 +234,12 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 
 	case task.Permissions != nil && *task.Permissions > 777:
 		return newTaskInvalidPropertyError("permissions", strconv.Itoa(int(*task.Permissions)), "umask value cannot be greater than 777")
+	}
+
+	if task.Permissions == nil {
+		task.Permissions = utils.New(uint(utils.GetUmask()))
+	} else {
+		*task.Permissions = uint(utils.Must(strconv.ParseUint(fmt.Sprint(*task.Permissions), 8, 0)))
 	}
 
 	if fileInfo, err := os.Stat(task.WorkingDirectory); err != nil {

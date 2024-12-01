@@ -3,6 +3,7 @@ package runners
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"syscall"
@@ -105,8 +106,14 @@ func (this *ProcessRunner) close() {
 	this.StderrLogFile.Close()
 }
 
-func (this *ProcessRunner) initCommand(conf config.Task) {
-	command := exec.Command(*conf.Command, conf.Arguments...)
+func (this *ProcessRunner) initCommand() {
+	command := exec.Command(*this.TaskConfig.Command, this.TaskConfig.Arguments...)
+
+	command.Env = make([]string, len(this.TaskConfig.Environment))
+	i := 0
+	for k, v := range maps.All(this.TaskConfig.Environment) {
+		command.Env[i] = fmt.Sprintf("%s=%s", k, v)
+	}
 	command.Dir = this.TaskConfig.WorkingDirectory
 	command.Stdout = this.StdoutLogFile
 	command.Stderr = this.StderrLogFile
@@ -175,36 +182,28 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		instance.StdoutLogFile = stdoutLogFile
 		instance.StderrLogFile = stderrLogFile
 	}
-	instance.initCommand(taskConf)
+	instance.initCommand()
 	return instance, nil
 }
 
-func (this *ProcessRunner) RestartProcess() {
-	command := this.State.command.Get()
-	// TODO: do not forget umask for restartProcess
-	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
-	go func() { //Proceed with the function when we know the process has stopped
-		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
-		if exitStatus := this.State.exitStatus.Get(); exitStatus == nil {
-			this.State.hasBeenKilled.Set(true)
-			command.Process.Kill()
-			command.Process.Wait()
-		}
-		//Remove trace of previous run to prevent conflict with current functions
-		this.State.Reset()
-		this.initCommand(this.TaskConfig)
-		this.StartProcess()
-	}()
-}
-
-func (this *ProcessRunner) StartProcess() {
+func (this *ProcessRunner) StartProcess(attempts int) error {
 	configStartTime := this.TaskConfig.StartTime
+	if this.State.hasBeenKilled.Get() {
+		return errors.New(ERROR_START_KILLED)
+	} else if this.State.startTime.Get() != nil {
+		return errors.New(ERROR_START_ALREADY_STARTED)
+	} else if this.State.userStopTime.Get() != nil {
+		return errors.New(ERROR_START_STOPPED)
+	}
+
 	this.State.startTime.Set(utils.New(time.Now()))
 	command := this.State.command.Get()
-	//Maybe restore this after running the process?
-	// TODO: TaskCong.Permissions is NULL, uncomment this when this is fixed
-	//syscall.Umask(int(*this.TaskConfig.Permissions))
-	if err := command.Start(); err != nil {
+
+	oldUmask := syscall.Umask(int(*this.TaskConfig.Permissions))
+	err := command.Start()
+	syscall.Umask(oldUmask)
+
+	if err != nil {
 		this.Output <- output.NewStartFailure(
 			fmt.Sprintf("Command failed to run (%s)", err.Error()),
 		)
@@ -226,12 +225,44 @@ func (this *ProcessRunner) StartProcess() {
 				this.Output <- output.NewStartSuccess()
 				this.State.userStartTime.Set(utils.New(time.Now()))
 			} else {
-				// TODO: Handle retry attempts
+				// TODO: handle restart attempts
 				this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
 			}
 		}()
 	}
+	return nil
+}
 
+func (this *ProcessRunner) StopProcess() error {
+	if this.State.startTime.Get() == nil {
+		return errors.New("process is not started")
+	}
+	this.State.userStopTime.Set(utils.New(time.Now()))
+	command := this.State.command.Get()
+	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal]) // crash here
+	go func() {
+		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
+		if this.State.exitStatus.Get() != nil {
+			return
+		}
+		this.State.hasBeenKilled.Set(true)
+		command.Process.Kill()
+	}()
+	return nil
+}
+
+func (this *ProcessRunner) RestartProcess() error {
+	if err := this.StopProcess(); err != nil {
+		return err
+	}
+	command := this.State.command.Get()
+	go func() {
+		command.Wait()
+		this.State.Reset()
+		this.initCommand()
+		this.StartProcess(this.TaskConfig.RestartAttempts)
+	}()
+	return nil
 }
 
 func (this *ProcessRunner) StatusProcess() {
@@ -262,21 +293,6 @@ func (this *ProcessRunner) StatusProcess() {
 	this.Output <- output.NewStatus(this.Id, status)
 }
 
-func (this *ProcessRunner) StopProcess() {
-	this.State.userStopTime.Set(utils.New(time.Now()))
-	command := this.State.command.Get()
-	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal]) // crash here
-	go func() {
-		println("waiting for process")
-		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
-		if this.State.exitStatus.Get() != nil {
-			return
-		}
-		this.State.hasBeenKilled.Set(true)
-		command.Process.Kill()
-	}()
-}
-
 func (this *ProcessRunner) Run() {
 	defer this.close()
 	for {
@@ -287,32 +303,24 @@ func (this *ProcessRunner) Run() {
 			switch req.(type) {
 
 			case input.Status:
-				println("PROCESS: received STATUS")
 				this.StatusProcess()
 
 			case input.Start:
-				if this.State.userStopTime.Get() != nil {
-					this.Output <- output.NewStartFailure(ERROR_START_STOPPED)
-					break
+				if err := this.StartProcess(this.TaskConfig.RestartAttempts); err != nil {
+					this.Output <- output.NewStartFailure(err.Error())
 				}
-				if this.State.hasBeenKilled.Get() {
-					this.Output <- output.NewStartFailure(ERROR_START_KILLED)
-					break
-				}
-				if this.State.startTime.Get() != nil {
-					this.Output <- output.NewStartFailure(ERROR_START_ALREADY_STARTED)
-					break
-				}
-				this.StartProcess()
 
 			case input.Stop:
-				this.StopProcess()
+				if err := this.StopProcess(); err != nil {
+					this.Output <- output.NewStopFailure(err.Error())
+				}
 
 			case input.Restart:
-				this.RestartProcess()
+				if err := this.RestartProcess(); err != nil {
+					this.Output <- output.NewRestartFailure(err.Error())
+				}
 
 			case input.Shutdown:
-				defer func() { this.Output <- output.NewShutdown() }()
 				return
 			}
 		}

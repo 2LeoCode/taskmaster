@@ -1,7 +1,6 @@
 package output
 
 import (
-	"taskmaster/config"
 	"taskmaster/messages/helpers"
 )
 
@@ -13,7 +12,6 @@ type Reload interface {
 type ReloadSuccess interface {
 	Reload
 	helpers.Success
-	NewConfig() *config.Config
 }
 
 type ReloadFailure interface {
@@ -26,7 +24,6 @@ type reload struct{ message }
 type reloadSuccess struct {
 	reload
 	helpers.BaseSuccess
-	newConfig *config.Config
 }
 
 type reloadFailure struct {
@@ -36,10 +33,8 @@ type reloadFailure struct {
 
 func (*reload) isReload() bool { return true }
 
-func (this *reloadSuccess) NewConfig() *config.Config { return this.newConfig }
-
-func NewReloadSuccess(newConfig *config.Config) ReloadSuccess {
-	return &reloadSuccess{newConfig: newConfig}
+func NewReloadSuccess() ReloadSuccess {
+	return &reloadSuccess{}
 }
 
 func NewReloadFailure(reason string) ReloadFailure {

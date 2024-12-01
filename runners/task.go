@@ -12,8 +12,6 @@ import (
 	"taskmaster/utils"
 )
 
-type exitEvent struct{}
-
 type TaskRunner struct {
 	Config config.Task
 
@@ -28,8 +26,6 @@ type TaskRunner struct {
 
 	processInputs  []chan processInput.Message
 	processOutputs []chan processOutput.Message
-
-	exitEvent chan exitEvent
 }
 
 type buildConfig struct {
@@ -55,7 +51,6 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 		GlobalProcessesOutput: globalProcessesOutput,
 		processInputs:         processInputs,
 		processOutputs:        processOutputs,
-		exitEvent:             make(chan exitEvent),
 	}
 
 	for i := range instance.Processes {
@@ -113,11 +108,12 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 	return instance, nil
 }
 
-func (this *TaskRunner) close() {
-	for i := range this.Processes {
-		close(this.processInputs[i])
-		close(this.processOutputs[i])
+func (this *TaskRunner) close(processClosed *sync.WaitGroup) {
+	println("close task")
+	for _, ch := range this.processInputs {
+		close(ch)
 	}
+	processClosed.Wait()
 }
 
 func (this *TaskRunner) forwardGlobalMessage(message interface {
@@ -130,9 +126,16 @@ func (this *TaskRunner) forwardGlobalMessage(message interface {
 }
 
 func (this *TaskRunner) Run() {
-	defer this.close()
-	for _, proc := range this.Processes {
-		go proc.Run()
+	var processClosed sync.WaitGroup
+	defer this.close(&processClosed)
+
+	for i, proc := range this.Processes {
+		processClosed.Add(1)
+		go func() {
+			proc.Run()
+			close(this.processOutputs[i])
+			processClosed.Done()
+		}()
 	}
 
 	go func() {
@@ -183,9 +186,6 @@ func (this *TaskRunner) Run() {
 						),
 					)
 
-				case processOutput.Shutdown:
-					this.exitEvent <- exitEvent{}
-
 				}
 
 			}
@@ -193,11 +193,9 @@ func (this *TaskRunner) Run() {
 	}()
 
 	for req := range this.Input {
-		println("received message")
 		switch req.(type) {
 
 		case input.Status:
-			println("TASK: received STATUS")
 			this.forwardGlobalMessage(processInput.NewStatus())
 
 		case input.StartProcess:
@@ -233,16 +231,8 @@ func (this *TaskRunner) Run() {
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewRestart()
 
-		case input.LocalShutdown:
-			this.forwardGlobalMessage(processInput.NewShutdown())
-			<-this.exitEvent
-			this.Output <- output.NewLocalShutdown()
-			return
-
 		case input.Shutdown:
 			this.forwardGlobalMessage(processInput.NewShutdown())
-			<-this.exitEvent
-			this.Output <- output.NewShutdown()
 			return
 
 		}
