@@ -202,7 +202,8 @@ func (this *ProcessRunner) StartProcess() {
 	this.State.startTime.Set(utils.New(time.Now()))
 	command := this.State.command.Get()
 	//Maybe restore this after running the process?
-	syscall.Umask(int(*this.TaskConfig.Permissions))
+	// TODO: TaskCong.Permissions is NULL, uncomment this when this is fixed
+	//syscall.Umask(int(*this.TaskConfig.Permissions))
 	if err := command.Start(); err != nil {
 		this.Output <- output.NewStartFailure(
 			fmt.Sprintf("Command failed to run (%s)", err.Error()),
@@ -264,7 +265,6 @@ func (this *ProcessRunner) StatusProcess() {
 func (this *ProcessRunner) StopProcess() {
 	this.State.userStopTime.Set(utils.New(time.Now()))
 	command := this.State.command.Get()
-	println(SIGNAL_TABLE[this.TaskConfig.StopSignal])
 	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal]) // crash here
 	go func() {
 		println("waiting for process")
