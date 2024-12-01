@@ -204,7 +204,7 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		instance.StdoutLogFile = stdoutLogFile
 		instance.StderrLogFile = stderrLogFile
 	}
-	instance.initCommand(taskConf)
+	instance.initCommand()
 	instance.State.startRetries.Set(utils.New(uint(1)))
 	return instance, nil
 }
@@ -244,7 +244,17 @@ func (this *ProcessRunner) StartProcess() error {
 
 				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
 					if *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
-						this.initCommand(this.TaskConfig)
+						this.initCommand()
+						*this.State.startRetries.Get() += 1
+						this.StartProcess()
+					}
+				}
+			}
+			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus && this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
+
+				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
+					if *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
+						this.initCommand()
 						*this.State.startRetries.Get() += 1
 						this.StartProcess()
 					}
