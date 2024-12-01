@@ -30,6 +30,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 		for {
 			print("> ")
 			if ok := scanner.Scan(); !ok {
+				commands <- []string{"shutdown"}
 				break
 			}
 			cmd := scanner.Text()
