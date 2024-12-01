@@ -176,6 +176,7 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		instance.StderrLogFile = stderrLogFile
 	}
 	instance.initCommand(taskConf)
+	instance.State.startRetries.Set(utils.New(uint(1)))
 	return instance, nil
 }
 
@@ -200,6 +201,7 @@ func (this *ProcessRunner) RestartProcess() {
 func (this *ProcessRunner) StartProcess() {
 	configStartTime := this.TaskConfig.StartTime
 	this.State.startTime.Set(utils.New(time.Now()))
+	this.State.exitStatus.Set(nil)
 	command := this.State.command.Get()
 	//Maybe restore this after running the process?
 	// TODO: TaskCong.Permissions is NULL, uncomment this when this is fixed
@@ -218,6 +220,16 @@ func (this *ProcessRunner) StartProcess() {
 			if this.State.userStopTime.Get() != nil {
 				this.Output <- output.NewStopSuccess(this.State.hasBeenKilled.Get())
 			}
+			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus &&  this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
+
+				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) { 
+					if *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
+						this.initCommand(this.TaskConfig)
+						*this.State.startRetries.Get() += 1
+						this.StartProcess()
+					}
+				}
+			}
 		}()
 
 		go func() {
@@ -226,8 +238,12 @@ func (this *ProcessRunner) StartProcess() {
 				this.Output <- output.NewStartSuccess()
 				this.State.userStartTime.Set(utils.New(time.Now()))
 			} else {
-				// TODO: Handle retry attempts
 				this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
+				if this.TaskConfig.Restart != "never" && *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
+					this.initCommand(this.TaskConfig)
+					*this.State.startRetries.Get() += 1
+					this.StartProcess()
+				}
 			}
 		}()
 	}
