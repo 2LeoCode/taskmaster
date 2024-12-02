@@ -14,7 +14,6 @@ type RestartProcess interface {
 type RestartProcessSuccess interface {
 	RestartProcess
 	helpers.Success
-	Killed() bool
 }
 
 type RestartProcessFailure interface {
@@ -31,7 +30,6 @@ type restartProcess struct {
 type restartProcessSuccess struct {
 	restartProcess
 	helpers.BaseSuccess
-	killed bool
 }
 
 type restartProcessFailure struct {
@@ -43,13 +41,11 @@ func (*restartProcess) isRestartProcess() bool { return true }
 func (this *restartProcess) TaskId() uint      { return this.taskId }
 func (this *restartProcess) ProcessId() uint   { return this.processId }
 
-func (this *restartProcessSuccess) Killed() bool { return this.killed }
-
 func NewRestartProcess(taskId uint, response taskOutput.RestartProcess) RestartProcess {
 	switch response.(type) {
 	case taskOutput.RestartProcessSuccess:
 		response := response.(RestartProcessSuccess)
-		return NewRestartProcessSuccess(taskId, response.ProcessId(), response.Killed())
+		return NewRestartProcessSuccess(taskId, response.ProcessId())
 	case taskOutput.RestartProcessFailure:
 		response := response.(taskOutput.RestartProcessFailure)
 		return NewRestartProcessFailure(taskId, response.ProcessId(), response.Reason())
@@ -57,13 +53,12 @@ func NewRestartProcess(taskId uint, response taskOutput.RestartProcess) RestartP
 	return nil
 }
 
-func NewRestartProcessSuccess(taskId, processId uint, killed bool) RestartProcessSuccess {
+func NewRestartProcessSuccess(taskId, processId uint) RestartProcessSuccess {
 	return &restartProcessSuccess{
 		restartProcess: restartProcess{
 			taskId:    taskId,
 			processId: processId,
 		},
-		killed: killed,
 	}
 }
 

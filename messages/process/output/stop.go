@@ -11,7 +11,6 @@ type Stop interface {
 type StopSuccess interface {
 	Stop
 	helpers.Success
-	Killed() bool
 }
 
 type StopFailure interface {
@@ -27,7 +26,6 @@ type stop struct {
 type stopSuccess struct {
 	stop
 	helpers.BaseSuccess
-	killed bool
 }
 
 type stopFailure struct {
@@ -37,10 +35,8 @@ type stopFailure struct {
 
 func (*stop) isStop() bool { return true }
 
-func (this *stopSuccess) Killed() bool { return this.killed }
-
-func NewStopSuccess(killed bool) StopSuccess {
-	return &stopSuccess{killed: killed}
+func NewStopSuccess() StopSuccess {
+	return &stopSuccess{}
 }
 
 func NewStopFailure(reason string) StopFailure {

@@ -38,8 +38,8 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 
 	go func() {
 		for !shouldStop.Get() {
-			reloadInProgress.Wait()
 			fmt.Print("> ")
+			reloadInProgress.Wait()
 			if ok := scanner.Scan(); !ok {
 				commands <- []string{"shutdown"}
 				break
@@ -62,46 +62,46 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 		case cmd := <-commands:
 			switch cmd[0] {
 			case "help":
-				println(HELP_MESSAGE)
+				fmt.Println(HELP_MESSAGE)
 
 			case "status":
 				out <- input.NewStatus()
 
 			case "start":
 				if len(cmd) != 3 {
-					println("usage: start <task-id> <process-id>")
+					fmt.Fprintln(os.Stderr, "usage: start <task-id> <process-id>")
 					break
 				}
 				taskId, taskIdErr := strconv.ParseUint(cmd[1], 10, 64)
 				processId, processIdErr := strconv.ParseUint(cmd[2], 10, 64)
 				if taskIdErr != nil || processIdErr != nil {
-					println("Error: task-id and process-id must be valid positive integers")
+					fmt.Fprintln(os.Stderr, "Error: task-id and process-id must be valid positive integers")
 					break
 				}
 				out <- input.NewStartProcess(uint(taskId), uint(processId))
 
 			case "stop":
 				if len(cmd) != 3 {
-					println("usage: stop <task-id> <process-id>")
+					fmt.Fprintln(os.Stderr, "usage: stop <task-id> <process-id>")
 					break
 				}
 				taskId, taskIdErr := strconv.ParseUint(cmd[1], 10, 64)
 				processId, processIdErr := strconv.ParseUint(cmd[2], 10, 64)
 				if taskIdErr != nil || processIdErr != nil {
-					println("Error: task-id and process-id must be valid positive integers")
+					fmt.Fprintln(os.Stderr, "Error: task-id and process-id must be valid positive integers")
 					break
 				}
 				out <- input.NewStopProcess(uint(taskId), uint(processId))
 
 			case "restart":
 				if len(cmd) != 3 {
-					println("usage: restart <task-id> <process-id>")
+					fmt.Fprintln(os.Stderr, "usage: restart <task-id> <process-id>")
 					break
 				}
 				taskId, taskIdErr := strconv.ParseUint(cmd[1], 10, 64)
 				processId, processIdErr := strconv.ParseUint(cmd[2], 10, 64)
 				if taskIdErr != nil || processIdErr != nil {
-					println("Error: task-id and process-id must be valid positive integers")
+					fmt.Fprintln(os.Stderr, "Error: task-id and process-id must be valid positive integers")
 				}
 				out <- input.NewRestartProcess(uint(taskId), uint(processId))
 
@@ -119,7 +119,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			commandOk.Done()
 
 		case res := <-in:
-			print("\r  \r")
+			fmt.Print("\r \r")
 			switch res.(type) {
 			case output.Status:
 				res := res.(output.Status)
@@ -133,7 +133,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 				res := res.(output.StartProcess)
 				switch res.(type) {
 				case helpers.Success:
-					fmt.Printf("Successfully started program %d in task %d.\n", res.ProcessId(), res.TaskId())
+					fmt.Printf("Starting program %d in task %d...\n", res.ProcessId(), res.TaskId())
 				case helpers.Failure:
 					reason := res.(helpers.Failure).Reason()
 					fmt.Printf("Failed to start program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
@@ -143,7 +143,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 				res := res.(output.StopProcess)
 				switch res.(type) {
 				case helpers.Success:
-					fmt.Printf("Successfully stopped program %d in task %d.\n", res.ProcessId(), res.TaskId())
+					fmt.Printf("Stopping program %d in task %d...\n", res.ProcessId(), res.TaskId())
 				case helpers.Failure:
 					reason := res.(helpers.Failure).Reason()
 					fmt.Printf("Failed to stop program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
@@ -153,25 +153,24 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 				res := res.(output.RestartProcess)
 				switch res.(type) {
 				case helpers.Success:
-					fmt.Printf("Successfully restarted program %d in task %d.\n", res.ProcessId(), res.TaskId())
+					fmt.Printf("Restarting programm %d in task %d...\n", res.ProcessId(), res.TaskId())
 				case helpers.Failure:
 					reason := res.(helpers.Failure).Reason()
 					fmt.Printf("Failed to restart program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
 				}
 
 			case output.Reload:
-				println("reload done")
 				reloadInProgress.Done()
 				switch res.(type) {
 				case helpers.Success:
-					println("Successfully reloaded configuration.")
+					fmt.Println("Successfully reloaded configuration.")
 				case helpers.Failure:
 				}
 
 			case output.BadRequest:
-				println("Invalid request.")
+				fmt.Fprintln(os.Stderr, "Invalid request.")
 			}
-			print("> ")
+			fmt.Print("> ")
 		}
 	}
 }

@@ -83,6 +83,14 @@ func NewProcessState() *processState {
 	}
 }
 
+type ProcessResponse uint
+
+const (
+	STARTED ProcessResponse = iota
+	STOPPED_EARLY
+	STOPPED
+)
+
 type ProcessRunner struct {
 	ConfigManager config.Manager
 	TaskConfig    config.Task
@@ -97,6 +105,8 @@ type ProcessRunner struct {
 	Output chan<- output.Message
 
 	State *processState
+
+	internalOutput chan ProcessResponse
 }
 
 func (this *ProcessRunner) close() {
@@ -156,7 +166,7 @@ func getLogFile(source OutputSource, logConfig string, conf *config.Config, task
 			conf.LogDir,
 			taskId,
 			processId,
-			time.Now().Format("060102_030405"),
+			time.Now().Format("060102_150405"),
 			getSourceName(),
 		)
 	case "ignore":
@@ -176,13 +186,14 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 	conf := manager.Get()
 	taskConf := conf.Tasks[taskId]
 	instance := &ProcessRunner{
-		ConfigManager: manager,
-		TaskConfig:    taskConf,
-		TaskId:        taskId,
-		Id:            id,
-		Input:         input,
-		Output:        output,
-		State:         NewProcessState(),
+		ConfigManager:  manager,
+		TaskConfig:     taskConf,
+		TaskId:         taskId,
+		Id:             id,
+		Input:          input,
+		Output:         output,
+		State:          NewProcessState(),
+		internalOutput: make(chan ProcessResponse),
 	}
 	if stdoutLogFile, err := getLogFile(STDOUT, taskConf.Stdout, conf, taskId, id); err != nil {
 		return nil, err
@@ -196,7 +207,7 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 	return instance, nil
 }
 
-func (this *ProcessRunner) StartProcess(attempts int) error {
+func (this *ProcessRunner) StartProcess() error {
 	configStartTime := this.TaskConfig.StartTime
 	if this.State.hasBeenKilled.Get() {
 		return errors.New(ERROR_START_KILLED)
@@ -214,29 +225,30 @@ func (this *ProcessRunner) StartProcess(attempts int) error {
 	syscall.Umask(oldUmask)
 
 	if err != nil {
-		this.Output <- output.NewStartFailure(
-			fmt.Sprintf("Command failed to run (%s)", err.Error()),
-		)
+		return fmt.Errorf("command failed to run (%s)", err.Error())
 	} else {
 		go func() {
 			command.Wait()
 			this.State.exitStatus.Set(utils.New(
-				this.State.command.Get().ProcessState.ExitCode(),
+				command.ProcessState.ExitCode(),
 			))
 			this.State.stopTime.Set(utils.New(time.Now()))
 			if this.State.userStopTime.Get() != nil {
-				this.Output <- output.NewStopSuccess(this.State.hasBeenKilled.Get())
+				this.internalOutput <- STOPPED
+				// this.Output <- output.NewStopSuccess(this.State.hasBeenKilled.Get())
 			}
 		}()
 
 		go func() {
 			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
 			if this.State.exitStatus.Get() == nil {
-				this.Output <- output.NewStartSuccess()
+				this.internalOutput <- STARTED
+				// this.Output <- output.NewStartSuccess()
 				this.State.userStartTime.Set(utils.New(time.Now()))
 			} else {
 				// TODO: handle restart attempts
-				this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
+				this.internalOutput <- STOPPED_EARLY
+				// this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
 			}
 		}()
 	}
@@ -249,7 +261,7 @@ func (this *ProcessRunner) StopProcess() error {
 	}
 	this.State.userStopTime.Set(utils.New(time.Now()))
 	command := this.State.command.Get()
-	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal]) // crash here
+	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
 	go func() {
 		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
 		if this.State.exitStatus.Get() != nil {
@@ -270,7 +282,7 @@ func (this *ProcessRunner) RestartProcess() error {
 		command.Wait()
 		this.State.Reset()
 		this.initCommand()
-		this.StartProcess(this.TaskConfig.RestartAttempts)
+		this.StartProcess()
 	}()
 	return nil
 }
@@ -306,28 +318,54 @@ func (this *ProcessRunner) StatusProcess() {
 func (this *ProcessRunner) Run() {
 	defer this.close()
 	for {
-		if req, ok := <-this.Input; !ok {
-			// Input channel has been closed
-			return
-		} else {
+		select {
+		case req, ok := <-this.internalOutput:
+			if !ok {
+				return
+			}
+			msg := "\r \r"
+			switch req {
+			case STARTED:
+				msg += "process %d of task %d succesfully started"
+			case STOPPED_EARLY:
+				msg += "process %d of task %d failed to start: stopped early"
+			case STOPPED:
+				msg += "process %d of task %d exited"
+			}
+			msg = fmt.Sprintf(msg, this.Id, this.TaskId) + "\n> "
+			// we try to just print the message here, if this works, we dont touch
+			fmt.Print(msg)
+
+		case req, ok := <-this.Input:
+			if !ok {
+				// Input channel has been closed
+				return
+			}
+
 			switch req.(type) {
 
 			case input.Status:
 				this.StatusProcess()
 
 			case input.Start:
-				if err := this.StartProcess(this.TaskConfig.RestartAttempts); err != nil {
+				if err := this.StartProcess(); err != nil {
 					this.Output <- output.NewStartFailure(err.Error())
+				} else {
+					this.Output <- output.NewStartSuccess()
 				}
 
 			case input.Stop:
 				if err := this.StopProcess(); err != nil {
 					this.Output <- output.NewStopFailure(err.Error())
+				} else {
+					this.Output <- output.NewStopSuccess()
 				}
 
 			case input.Restart:
 				if err := this.RestartProcess(); err != nil {
 					this.Output <- output.NewRestartFailure(err.Error())
+				} else {
+					this.Output <- output.NewRestartSuccess()
 				}
 
 			case input.Shutdown:

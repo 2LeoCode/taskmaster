@@ -14,7 +14,6 @@ type StopProcess interface {
 type StopProcessSuccess interface {
 	StopProcess
 	helpers.Success
-	Killed() bool
 }
 
 type StopProcessFailure interface {
@@ -31,7 +30,6 @@ type stopProcess struct {
 type stopProcessSuccess struct {
 	stopProcess
 	helpers.BaseSuccess
-	killed bool
 }
 
 type stopProcessFailure struct {
@@ -43,13 +41,11 @@ func (*stopProcess) isStopProcess() bool  { return true }
 func (this *stopProcess) TaskId() uint    { return this.taskId }
 func (this *stopProcess) ProcessId() uint { return this.processId }
 
-func (this *stopProcessSuccess) Killed() bool { return this.killed }
-
 func NewStopProcess(taskId uint, response taskOutput.StopProcess) StopProcess {
 	switch response.(type) {
 	case taskOutput.StopProcessSuccess:
 		response := response.(taskOutput.StopProcessSuccess)
-		return NewStopProcessSuccess(taskId, response.ProcessId(), response.Killed())
+		return NewStopProcessSuccess(taskId, response.ProcessId())
 	case taskOutput.StopProcessFailure:
 		response := response.(taskOutput.StopProcessFailure)
 		return NewStopProcessFailure(taskId, response.ProcessId(), response.Reason())
@@ -57,13 +53,12 @@ func NewStopProcess(taskId uint, response taskOutput.StopProcess) StopProcess {
 	return nil
 }
 
-func NewStopProcessSuccess(taskId, processId uint, killed bool) StopProcessSuccess {
+func NewStopProcessSuccess(taskId, processId uint) StopProcessSuccess {
 	return &stopProcessSuccess{
 		stopProcess: stopProcess{
 			taskId:    taskId,
 			processId: processId,
 		},
-		killed: killed,
 	}
 }
 

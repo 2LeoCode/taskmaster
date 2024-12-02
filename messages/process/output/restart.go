@@ -11,7 +11,6 @@ type Restart interface {
 type RestartSuccess interface {
 	Restart
 	helpers.Success
-	Killed() bool
 }
 
 type RestartFailure interface {
@@ -27,7 +26,6 @@ type restart struct {
 type restartSuccess struct {
 	restart
 	helpers.BaseSuccess
-	killed bool
 }
 
 type restartFailure struct {
@@ -37,10 +35,8 @@ type restartFailure struct {
 
 func (*restart) isRestart() bool { return true }
 
-func (this *restartSuccess) Killed() bool { return this.killed }
-
-func NewRestartSuccess(killed bool) RestartSuccess {
-	return &restartSuccess{killed: killed}
+func NewRestartSuccess() RestartSuccess {
+	return &restartSuccess{}
 }
 
 func NewRestartFailure(reason string) RestartFailure {

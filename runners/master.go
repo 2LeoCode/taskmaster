@@ -2,6 +2,7 @@ package runners
 
 import (
 	"sync"
+	"taskmaster/atom"
 	"taskmaster/config"
 	"taskmaster/messages/helpers"
 	"taskmaster/messages/master/input"
@@ -27,6 +28,9 @@ type MasterRunner struct {
 
 	tasksClosed        *sync.WaitGroup
 	specificTaskClosed []*sync.WaitGroup
+	masterClosed       *sync.WaitGroup
+
+	shouldCloseOutput atom.Atom[bool]
 }
 
 type StopSignal struct{}
@@ -54,7 +58,11 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 		stopSignal:         make(chan StopSignal),
 		tasksClosed:        new(sync.WaitGroup),
 		specificTaskClosed: make([]*sync.WaitGroup, len(conf.Tasks)),
+		masterClosed:       new(sync.WaitGroup),
+		shouldCloseOutput:  atom.NewAtom(true),
 	}
+
+	instance.masterClosed.Add(1)
 
 	for i := range instance.Tasks {
 		instance.specificTaskClosed[i] = new(sync.WaitGroup)
@@ -90,7 +98,9 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 			// Reload master
 			instance.forwardGlobalMessage(taskInput.NewShutdown())
 			instance.tasksClosed.Wait()
+			instance.shouldCloseOutput.Set(false)
 			instance.stopSignal <- StopSignal{}
+			instance.masterClosed.Wait()
 			if newInstance, err := NewMasterRunner(manager, in, out); err != nil {
 				return err
 			} else {
@@ -147,11 +157,14 @@ func (this *MasterRunner) close() {
 	for _, ch := range *this.taskInputs {
 		close(ch)
 	}
-	close(this.Output)
+	if this.shouldCloseOutput.Get() {
+		close(this.Output)
+	}
 	close(this.stopSignal)
 	this.tasksClosed.Wait()
 	close(this.GlobalTasksOutput)
 	close(this.LocalTasksOutput)
+	this.masterClosed.Done()
 }
 
 func (this *MasterRunner) forwardGlobalMessage(message interface {
