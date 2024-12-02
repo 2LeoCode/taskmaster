@@ -1,0 +1,16 @@
+{
+  "$schema": "./tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "hello-world",
+      "command": "base64",
+      "arguments": ["/dev/random"],
+      "startTime": 1000,
+      "stopSignal": "SIGINT",
+      "stdout": "ignore",
+      "restartAttempts": 3,
+      "restart": "always"
+    }
+  ],
+  "logDir": "./logs"
+}
