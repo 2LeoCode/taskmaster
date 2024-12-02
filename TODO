@@ -1,0 +1,5 @@
+- Merge jayache's branch for restart-attempts
+- Fix status display when process is stopped
+- Add a SIGHUP signal handler to reload config
+- Add a log file that will contain taskmaster's output
+- Handle startAtLaunch config option
