@@ -24,7 +24,7 @@ type Task struct {
 	StartAtLaunch      bool
 	Instances          uint
 	Restart            string
-	RestartAttempts    int
+	RestartAttempts    uint
 	ExpectedExitStatus int
 	StartTime          uint
 	StopTime           uint
@@ -203,7 +203,7 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	restartValues := []string{"always", "never", "on-failure"}
+	restartValues := []string{"always", "never", "on-failure", "unless-stopped"}
 	stopSignalValues := []string{"SIGINT", "SIGQUIT", "SIGTERM", "SIGUSR1", "SIGUSR2", "SIGSTOP", "SIGTSTP"}
 	stdioValues := []string{"ignore", "inherit", "redirect"}
 
