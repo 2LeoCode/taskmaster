@@ -111,6 +111,7 @@ type ProcessRunner struct {
 
 func (this *ProcessRunner) close() {
 	this.StopProcess()
+	close(this.Output)
 	this.State.command.Get().Wait()
 	this.StdoutLogFile.Close()
 	this.StderrLogFile.Close()

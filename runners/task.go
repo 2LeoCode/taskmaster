@@ -21,11 +21,13 @@ type TaskRunner struct {
 	Output chan<- output.Message
 
 	Processes             []*ProcessRunner
-	LocalProcessesOutput  <-chan utils.Pair[uint, processOutput.Message]
-	GlobalProcessesOutput <-chan []processOutput.Message
+	LocalProcessesOutput  chan utils.Pair[uint, processOutput.Message]
+	GlobalProcessesOutput chan []processOutput.Message
 
 	processInputs  []chan processInput.Message
 	processOutputs []chan processOutput.Message
+
+	globalOutputPipes []chan processOutput.Message
 }
 
 type buildConfig struct {
@@ -51,6 +53,7 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 		GlobalProcessesOutput: globalProcessesOutput,
 		processInputs:         processInputs,
 		processOutputs:        processOutputs,
+		globalOutputPipes:     make([]chan processOutput.Message, len(processOutputs)),
 	}
 
 	for i := range instance.Processes {
@@ -63,18 +66,8 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 		}
 	}
 
-	globalOutputs := make([]chan processOutput.Message, len(processOutputs))
-
-	var wg sync.WaitGroup
-	wg.Add(len(processOutputs))
-
-	go func() {
-		wg.Wait()
-		close(localProcessesOutput)
-	}()
-
 	for i, out := range processOutputs {
-		globalOutputs[i] = make(chan processOutput.Message)
+		instance.globalOutputPipes[i] = make(chan processOutput.Message)
 		i := i
 		out := out
 		go func() {
@@ -83,18 +76,16 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 				case helpers.Local:
 					localProcessesOutput <- utils.NewPair(uint(i), msg)
 				case helpers.Global:
-					globalOutputs[i] <- msg
+					instance.globalOutputPipes[i] <- msg
 				}
 			}
-			close(globalOutputs[i])
-			wg.Done()
 		}()
 	}
 
 	go func() {
-		chunk := make([]processOutput.Message, len(globalOutputs))
+		chunk := make([]processOutput.Message, len(instance.globalOutputPipes))
 		for {
-			for i, ch := range globalOutputs {
+			for i, ch := range instance.globalOutputPipes {
 				if value, ok := <-ch; !ok {
 					return
 				} else {
@@ -109,10 +100,18 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 }
 
 func (this *TaskRunner) close(processClosed *sync.WaitGroup) {
+	println("task close start")
 	for _, ch := range this.processInputs {
 		close(ch)
 	}
 	processClosed.Wait()
+	close(this.Output)
+	for _, ch := range this.globalOutputPipes {
+		close(ch)
+	}
+	close(this.GlobalProcessesOutput)
+	close(this.LocalProcessesOutput)
+	println("task close end")
 }
 
 func (this *TaskRunner) forwardGlobalMessage(message interface {
@@ -128,11 +127,10 @@ func (this *TaskRunner) Run() {
 	var processClosed sync.WaitGroup
 	defer this.close(&processClosed)
 
-	for i, proc := range this.Processes {
+	for _, proc := range this.Processes {
 		processClosed.Add(1)
 		go func() {
 			proc.Run()
-			close(this.processOutputs[i])
 			processClosed.Done()
 		}()
 	}

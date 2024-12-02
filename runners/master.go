@@ -31,6 +31,7 @@ type MasterRunner struct {
 	masterClosed       *sync.WaitGroup
 
 	shouldCloseOutput atom.Atom[bool]
+	globalOutputPipes []chan taskOutput.Message
 }
 
 type StopSignal struct{}
@@ -60,6 +61,7 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 		specificTaskClosed: make([]*sync.WaitGroup, len(conf.Tasks)),
 		masterClosed:       new(sync.WaitGroup),
 		shouldCloseOutput:  atom.NewAtom(true),
+		globalOutputPipes:  make([]chan taskOutput.Message, len(taskOutputs)),
 	}
 
 	instance.masterClosed.Add(1)
@@ -75,21 +77,19 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 		}
 	}
 
-	globalOutputs := make([]chan taskOutput.Message, len(taskOutputs))
-
 	linkTaskOutput := func(idx uint, out <-chan taskOutput.Message) {
 		for msg := range out {
 			switch msg.(type) {
 			case helpers.Local:
 				localTasksOutput <- utils.NewPair(idx, msg)
 			case helpers.Global:
-				globalOutputs[idx] <- msg
+				instance.globalOutputPipes[idx] <- msg
 			}
 		}
 	}
 
 	for i, out := range taskOutputs {
-		globalOutputs[i] = make(chan taskOutput.Message)
+		instance.globalOutputPipes[i] = make(chan taskOutput.Message)
 		go linkTaskOutput(uint(i), out)
 	}
 
@@ -105,6 +105,7 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 				return err
 			} else {
 				*instance = *newInstance
+				go instance.Run()
 			}
 		} else {
 			// Check which task needs to be reloaded
@@ -125,7 +126,6 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 						instance.Tasks[i] = task
 						go func() {
 							task.Run()
-							close(taskOutputs[i])
 							instance.specificTaskClosed[i].Done()
 							instance.tasksClosed.Done()
 						}()
@@ -137,9 +137,9 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 	})
 
 	go func() {
-		chunk := make([]taskOutput.Message, len(globalOutputs))
+		chunk := make([]taskOutput.Message, len(instance.globalOutputPipes))
 		for {
-			for i, ch := range globalOutputs {
+			for i, ch := range instance.globalOutputPipes {
 				if value, ok := <-ch; !ok {
 					return
 				} else {
@@ -162,6 +162,9 @@ func (this *MasterRunner) close() {
 	}
 	close(this.stopSignal)
 	this.tasksClosed.Wait()
+	for _, ch := range this.globalOutputPipes {
+		close(ch)
+	}
 	close(this.GlobalTasksOutput)
 	close(this.LocalTasksOutput)
 	this.masterClosed.Done()
@@ -183,7 +186,6 @@ func (this *MasterRunner) Run() {
 		this.specificTaskClosed[i].Add(1)
 		go func() {
 			task.Run()
-			close((*this.taskOutputs)[i])
 			this.specificTaskClosed[i].Done()
 			this.tasksClosed.Done()
 		}()
