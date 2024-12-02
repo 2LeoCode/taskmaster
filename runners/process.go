@@ -109,11 +109,10 @@ func (this *ProcessRunner) close() {
 func (this *ProcessRunner) initCommand() {
 	command := exec.Command(*this.TaskConfig.Command, this.TaskConfig.Arguments...)
 
-	command.Env = make([]string, len(this.TaskConfig.Environment))
-	i := 0
 	for k, v := range maps.All(this.TaskConfig.Environment) {
-		command.Env[i] = fmt.Sprintf("%s=%s", k, v)
+		command.Env = append(command.Env, fmt.Sprintf("%s=%s", k, v))
 	}
+
 	command.Dir = this.TaskConfig.WorkingDirectory
 	command.Stdout = this.StdoutLogFile
 	command.Stderr = this.StderrLogFile
@@ -128,6 +127,16 @@ const (
 )
 
 func getLogFile(source OutputSource, logConfig string, conf *config.Config, taskId, processId uint) (*os.File, error) {
+	getSourceName := func() string {
+		switch source {
+		case STDOUT:
+			return "stdout"
+		case STDERR:
+			return "stderr"
+		}
+		return ""
+	}
+
 	if logConfig == "inherit" {
 		switch source {
 		case STDOUT:
@@ -143,11 +152,12 @@ func getLogFile(source OutputSource, logConfig string, conf *config.Config, task
 	switch logConfig {
 	case "redirect":
 		logFileName = fmt.Sprintf(
-			"%s/%d-%d_%s-stdout.log",
+			"%s/%d-%d_%s-%s.log",
 			conf.LogDir,
 			taskId,
 			processId,
 			time.Now().Format("060102_030405"),
+			getSourceName(),
 		)
 	case "ignore":
 		logFileName = "/dev/null"
@@ -158,7 +168,7 @@ func getLogFile(source OutputSource, logConfig string, conf *config.Config, task
 	return os.OpenFile(
 		logFileName,
 		os.O_WRONLY|os.O_APPEND|os.O_CREATE,
-		os.ModeAppend.Perm(),
+		0o666,
 	)
 }
 

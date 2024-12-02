@@ -3,14 +3,12 @@
   "tasks": [
     {
       "name": "hello-world",
-      "command": "bash",
-      "arguments": ["-c", "sleep 5; echo env=$HELLO; sleep 5"],
+      "command": "/usr/bin/env",
       "environment": {
         "HELLO": "Hello world!"
       },
       "startTime": 5000,
-      "stopSignal": "SIGINT",
-      "stdout": "ignore"
+      "stopSignal": "SIGINT"
     }
   ],
   "logDir": "./logs"
