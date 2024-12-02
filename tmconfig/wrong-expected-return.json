@@ -1,0 +1,19 @@
+{
+  "$schema": "./tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "hello-world",
+      "command": "bash",
+      "arguments": ["-c", "sleep 50; echo $HELLO"],
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 2000,
+      "expectedExitStatus": 5,
+      "restartAttempts": 3,
+      "stopSignal": "SIGINT",
+      "stdout": "ignore"
+    }
+  ],
+  "logDir": "./logs"
+}

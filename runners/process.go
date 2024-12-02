@@ -204,7 +204,8 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		instance.StdoutLogFile = stdoutLogFile
 		instance.StderrLogFile = stderrLogFile
 	}
-	instance.initCommand()
+	instance.initCommand(taskConf)
+	instance.State.startRetries.Set(utils.New(uint(1)))
 	return instance, nil
 }
 
@@ -219,6 +220,7 @@ func (this *ProcessRunner) StartProcess() error {
 	}
 
 	this.State.startTime.Set(utils.New(time.Now()))
+	this.State.exitStatus.Set(nil)
 	command := this.State.command.Get()
 
 	oldUmask := syscall.Umask(int(*this.TaskConfig.Permissions))
@@ -238,6 +240,16 @@ func (this *ProcessRunner) StartProcess() error {
 				this.internalOutput <- STOPPED
 				// this.Output <- output.NewStopSuccess(this.State.hasBeenKilled.Get())
 			}
+			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus && this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
+
+				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
+					if *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
+						this.initCommand(this.TaskConfig)
+						*this.State.startRetries.Get() += 1
+						this.StartProcess()
+					}
+				}
+			}
 		}()
 
 		go func() {
@@ -247,9 +259,12 @@ func (this *ProcessRunner) StartProcess() error {
 				// this.Output <- output.NewStartSuccess()
 				this.State.userStartTime.Set(utils.New(time.Now()))
 			} else {
-				// TODO: handle restart attempts
 				this.internalOutput <- STOPPED_EARLY
-				// this.Output <- output.NewStartFailure(ERROR_START_STOPPED_EARLY)
+				if this.TaskConfig.Restart != "never" && *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
+					this.initCommand()
+					*this.State.startRetries.Get() += 1
+					this.StartProcess()
+				}
 			}
 		}()
 	}
