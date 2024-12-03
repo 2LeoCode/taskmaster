@@ -342,6 +342,9 @@ func (this *ProcessRunner) StatusProcess() {
 	default:
 		status += "RUNNING"
 	}
+	if this.TaskConfig.RestartAttempts > 0 {
+	status += fmt.Sprintf("(Restarted %d/%d)", *this.State.startRetries.Get(), this.TaskConfig.RestartAttempts)
+	}
 	this.Output <- output.NewStatus(this.Id, status)
 }
 
