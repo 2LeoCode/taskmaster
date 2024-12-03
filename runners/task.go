@@ -100,7 +100,6 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 }
 
 func (this *TaskRunner) close(processClosed *sync.WaitGroup) {
-	println("task close start")
 	for _, ch := range this.processInputs {
 		close(ch)
 	}
@@ -111,7 +110,6 @@ func (this *TaskRunner) close(processClosed *sync.WaitGroup) {
 	}
 	close(this.GlobalProcessesOutput)
 	close(this.LocalProcessesOutput)
-	println("task close end")
 }
 
 func (this *TaskRunner) forwardGlobalMessage(message interface {

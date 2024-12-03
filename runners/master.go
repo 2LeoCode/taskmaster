@@ -1,7 +1,12 @@
 package runners
 
 import (
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"taskmaster/atom"
 	"taskmaster/config"
 	"taskmaster/messages/helpers"
@@ -10,6 +15,7 @@ import (
 	taskInput "taskmaster/messages/task/input"
 	taskOutput "taskmaster/messages/task/output"
 	"taskmaster/utils"
+	"time"
 )
 
 type MasterRunner struct {
@@ -32,9 +38,13 @@ type MasterRunner struct {
 
 	shouldCloseOutput atom.Atom[bool]
 	globalOutputPipes []chan taskOutput.Message
+
+	reloadSignal chan os.Signal
 }
 
 type StopSignal struct{}
+
+var TaskmasterLogFile = atom.NewAtom[*os.File](nil)
 
 func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<- output.Message) (*MasterRunner, error) {
 	conf := manager.Get()
@@ -62,7 +72,15 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 		masterClosed:       new(sync.WaitGroup),
 		shouldCloseOutput:  atom.NewAtom(true),
 		globalOutputPipes:  make([]chan taskOutput.Message, len(taskOutputs)),
+		reloadSignal:       make(chan os.Signal),
 	}
+	if globalLogFile, err := os.OpenFile(fmt.Sprint("%s/taskmaster_%s.log", conf.LogDir, time.Now().Format("060102_150405")), os.O_CREATE|os.O_APPEND, 0o666); err != nil {
+		return nil, err
+	} else {
+		TaskmasterLogFile.Set(globalLogFile)
+	}
+
+	signal.Notify(instance.reloadSignal, syscall.SIGHUP)
 
 	instance.masterClosed.Add(1)
 
@@ -241,8 +259,20 @@ func (this *MasterRunner) Run() {
 		}
 	}()
 
+	reloadConfig := func() {
+		if err := this.ConfigManager.Load(); err != nil {
+			this.Output <- output.NewReloadFailure(err.Error())
+		} else {
+			this.Output <- output.NewReloadSuccess()
+		}
+	}
+
 	for {
 		select {
+
+		case <-this.reloadSignal:
+			go reloadConfig()
+
 		case <-this.stopSignal:
 			return
 
@@ -297,13 +327,7 @@ func (this *MasterRunner) Run() {
 				return
 
 			case input.Reload:
-				go func() {
-					if err := this.ConfigManager.Load(); err != nil {
-						this.Output <- output.NewReloadFailure(err.Error())
-					} else {
-						this.Output <- output.NewReloadSuccess()
-					}
-				}()
+				go reloadConfig()
 
 			default:
 				this.Output <- output.NewBadRequest()

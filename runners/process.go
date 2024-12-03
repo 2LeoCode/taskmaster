@@ -236,9 +236,7 @@ func (this *ProcessRunner) StartProcess() error {
 				command.ProcessState.ExitCode(),
 			))
 			this.State.stopTime.Set(utils.New(time.Now()))
-			if this.State.userStopTime.Get() != nil {
-				this.internalOutput <- STOPPED
-			}
+			this.internalOutput <- STOPPED
 			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus && this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
 
 				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
@@ -357,8 +355,8 @@ func (this *ProcessRunner) Run() {
 				msg += "process %d of task %d exited"
 			}
 			msg = fmt.Sprintf(msg, this.Id, this.TaskId) + "\n> "
-			// we try to just print the message here, if this works, we dont touch
 			fmt.Print(msg)
+			fmt.Fprint(TaskmasterLogFile.Get(), msg)
 
 		case req, ok := <-this.Input:
 			if !ok {
