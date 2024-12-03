@@ -339,6 +339,14 @@ func (this *ProcessRunner) StatusProcess() {
 
 func (this *ProcessRunner) Run() {
 	defer this.close()
+	//here autostar
+	if this.TaskConfig.StartAtLaunch {
+		if err := this.StartProcess(); err != nil {
+			this.Output <- output.NewStartFailure(err.Error())
+		} else {
+			this.Output <- output.NewStartSuccess()
+		}
+	}
 	for {
 		select {
 		case req, ok := <-this.internalOutput:
