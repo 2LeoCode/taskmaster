@@ -273,17 +273,6 @@ func (this *ProcessRunner) StartProcess() error {
 					}
 				}
 			}
-			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus && this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
-
-				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
-					if *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
-						this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
-						this.State.Reset()
-						this.StartProcess()
-						return
-					}
-				}
-			}
 		}()
 
 		go func() {
