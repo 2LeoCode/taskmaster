@@ -108,7 +108,8 @@ const (
 	STARTED
 	STOPPED_EARLY
 	STOPPING
-	STOPPED
+	STOPPED_SUCCESSFULLY
+	STOPPED_UNSUCCESSFULLY
 )
 
 type ProcessRunner struct {
@@ -257,13 +258,17 @@ func (this *ProcessRunner) StartProcess() error {
 		this.commandErrors <- err
 	} else {
 		go func() {
-			command.Wait()
+			state, _ := command.Process.Wait()
+			exitCode := state.ExitCode()
 			this.State.exitStatus.Set(utils.New(
-				command.ProcessState.ExitCode(),
+				exitCode,
 			))
 			this.State.stopTime.Set(utils.New(time.Now()))
-			this.internalOutput <- STOPPED
-
+			if exitCode == this.TaskConfig.ExpectedExitStatus {
+				this.internalOutput <- STOPPED_SUCCESSFULLY
+			} else {
+				this.internalOutput <- STOPPED_UNSUCCESSFULLY
+			}
 			if this.State.userStartTime.Get() == nil {
 				this.State.stoppedEarly.Set(true)
 				if this.TaskConfig.Restart != "never" && (this.TaskConfig.RestartAttempts == 0 || *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts) {
@@ -384,8 +389,10 @@ func (this *ProcessRunner) Run() {
 				msg += "started"
 			case STOPPING:
 				msg += "stopping"
-			case STOPPED:
-				msg += "stopped"
+			case STOPPED_SUCCESSFULLY:
+				msg += "stopped successfully"
+			case STOPPED_UNSUCCESSFULLY:
+				msg += "stopped unsuccessfully"
 			}
 			fmt.Printf("\r \r%s\n> ", msg)
 			fmt.Fprintf(TaskmasterLogFile.Get(), "%s: %s\n", time.Now().Format("06/01/02 15:04:05"), msg)
