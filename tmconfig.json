@@ -2,7 +2,7 @@
   "$schema": "./tmconfig.schema.json",
   "tasks": [
     {
-      "name": "hello-world",
+      "name": "hello-world1",
       "command": "/usr/bin/env",
       "environment": {
         "HELLO": "Hello world!"
@@ -11,5 +11,5 @@
       "stopSignal": "SIGINT"
     }
   ],
-  "logDir": "./logs"
+  "logDir": "./log"
 }

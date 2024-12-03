@@ -56,30 +56,42 @@ const ERROR_START_ALREADY_STARTED string = "Process already started. " + HINT_RE
 const ERROR_START_STOPPED_EARLY = "Process stopped before the configured time"
 
 type processState struct {
-	startRetries  atom.Atom[*uint]
-	userStartTime atom.Atom[*time.Time]
-	startTime     atom.Atom[*time.Time]
-	userStopTime  atom.Atom[*time.Time]
-	stopTime      atom.Atom[*time.Time]
-	exitStatus    atom.Atom[*int]
-	hasBeenKilled atom.Atom[bool]
-	command       atom.Atom[*exec.Cmd]
+	startRetries    atom.Atom[*uint]
+	userStartTime   atom.Atom[*time.Time]
+	startTime       atom.Atom[*time.Time]
+	userStopTime    atom.Atom[*time.Time]
+	stopTime        atom.Atom[*time.Time]
+	exitStatus      atom.Atom[*int]
+	hasBeenKilled   atom.Atom[bool]
+	command         atom.Atom[*exec.Cmd]
+	hasBeenShutdown atom.Atom[bool]
 }
 
 func (this *processState) Reset() {
-	*this = *NewProcessState()
+	*this = processState{
+		userStartTime:   atom.NewAtom[*time.Time](nil),
+		startTime:       atom.NewAtom[*time.Time](nil),
+		userStopTime:    atom.NewAtom[*time.Time](nil),
+		stopTime:        atom.NewAtom[*time.Time](nil),
+		exitStatus:      atom.NewAtom[*int](nil),
+		command:         atom.NewAtom[*exec.Cmd](nil),
+		hasBeenKilled:   atom.NewAtom(false),
+		startRetries:    this.startRetries,
+		hasBeenShutdown: this.hasBeenShutdown,
+	}
 }
 
 func NewProcessState() *processState {
 	return &processState{
-		startRetries:  atom.NewAtom[*uint](nil),
-		userStartTime: atom.NewAtom[*time.Time](nil),
-		startTime:     atom.NewAtom[*time.Time](nil),
-		userStopTime:  atom.NewAtom[*time.Time](nil),
-		stopTime:      atom.NewAtom[*time.Time](nil),
-		exitStatus:    atom.NewAtom[*int](nil),
-		hasBeenKilled: atom.NewAtom[bool](false),
-		command:       atom.NewAtom[*exec.Cmd](nil),
+		userStartTime:   atom.NewAtom[*time.Time](nil),
+		startTime:       atom.NewAtom[*time.Time](nil),
+		userStopTime:    atom.NewAtom[*time.Time](nil),
+		stopTime:        atom.NewAtom[*time.Time](nil),
+		exitStatus:      atom.NewAtom[*int](nil),
+		command:         atom.NewAtom[*exec.Cmd](nil),
+		hasBeenKilled:   atom.NewAtom(false),
+		startRetries:    atom.NewAtom[*uint](nil),
+		hasBeenShutdown: atom.NewAtom(false),
 	}
 }
 
@@ -110,6 +122,7 @@ type ProcessRunner struct {
 }
 
 func (this *ProcessRunner) close() {
+	this.State.hasBeenShutdown.Set(true)
 	this.StopProcess()
 	close(this.Output)
 	this.State.command.Get().Wait()
@@ -120,8 +133,10 @@ func (this *ProcessRunner) close() {
 func (this *ProcessRunner) initCommand() {
 	command := exec.Command(*this.TaskConfig.Command, this.TaskConfig.Arguments...)
 
+	command.Env = make([]string, len(this.TaskConfig.Environment))
+	i := 0
 	for k, v := range maps.All(this.TaskConfig.Environment) {
-		command.Env = append(command.Env, fmt.Sprintf("%s=%s", k, v))
+		command.Env[i] = fmt.Sprintf("%s=%s", k, v)
 	}
 
 	command.Dir = this.TaskConfig.WorkingDirectory
@@ -204,12 +219,12 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		instance.StdoutLogFile = stdoutLogFile
 		instance.StderrLogFile = stderrLogFile
 	}
-	instance.initCommand()
-	instance.State.startRetries.Set(utils.New(uint(1)))
+	instance.State.startRetries.Set(utils.New(uint(0)))
 	return instance, nil
 }
 
 func (this *ProcessRunner) StartProcess() error {
+	this.initCommand()
 	configStartTime := this.TaskConfig.StartTime
 	if this.State.hasBeenKilled.Get() {
 		return errors.New(ERROR_START_KILLED)
@@ -237,13 +252,24 @@ func (this *ProcessRunner) StartProcess() error {
 			))
 			this.State.stopTime.Set(utils.New(time.Now()))
 			this.internalOutput <- STOPPED
+			if this.State.userStartTime.Get() == nil {
+
+				this.internalOutput <- STOPPED_EARLY
+				if this.TaskConfig.Restart != "never" && (this.TaskConfig.RestartAttempts == 0 || *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts) {
+					this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
+					this.State.Reset()
+					this.StartProcess()
+					return
+				}
+			}
 			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus && this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
 
 				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
-					if *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
-						this.initCommand()
-						*this.State.startRetries.Get() += 1
+					if this.TaskConfig.RestartAttempts == 0 || *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
+						this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
+						this.State.Reset()
 						this.StartProcess()
+						return
 					}
 				}
 			}
@@ -251,9 +277,10 @@ func (this *ProcessRunner) StartProcess() error {
 
 				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
 					if *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
-						this.initCommand()
-						*this.State.startRetries.Get() += 1
+						this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
+						this.State.Reset()
 						this.StartProcess()
+						return
 					}
 				}
 			}
@@ -261,16 +288,9 @@ func (this *ProcessRunner) StartProcess() error {
 
 		go func() {
 			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
+			this.State.userStartTime.Set(utils.New(time.Now()))
 			if this.State.exitStatus.Get() == nil {
 				this.internalOutput <- STARTED
-				this.State.userStartTime.Set(utils.New(time.Now()))
-			} else {
-				this.internalOutput <- STOPPED_EARLY
-				if this.TaskConfig.Restart != "never" && *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
-					this.initCommand()
-					*this.State.startRetries.Get() += 1
-					this.StartProcess()
-				}
 			}
 		}()
 	}
@@ -278,11 +298,11 @@ func (this *ProcessRunner) StartProcess() error {
 }
 
 func (this *ProcessRunner) StopProcess() error {
-	if this.State.startTime.Get() == nil {
+	command := this.State.command.Get()
+	if this.State.startTime.Get() == nil || command.Process == nil {
 		return errors.New("process is not started")
 	}
 	this.State.userStopTime.Set(utils.New(time.Now()))
-	command := this.State.command.Get()
 	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
 	go func() {
 		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
@@ -303,7 +323,6 @@ func (this *ProcessRunner) RestartProcess() error {
 	go func() {
 		command.Wait()
 		this.State.Reset()
-		this.initCommand()
 		this.StartProcess()
 	}()
 	return nil
