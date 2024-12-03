@@ -1,0 +1,10 @@
+{
+  "$schema": "../../tmconfig.schema.json",
+  "logDir": "./logs",
+  "tasks": [
+    {
+      "name": "task-00",
+      "restart": "always"
+    }
+  ]
+}
