@@ -1,0 +1,18 @@
+{
+  "$schema": "./tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "hello-world-multiples",
+      "instances": -5,
+      "command": "bash",
+      "arguments": ["-c", "sleep 5; echo $HELLO"],
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 2000,
+      "stopSignal": "SIGINT",
+      "stdout": "inherit"
+    }
+  ],
+  "logDir": "./logs"
+}
