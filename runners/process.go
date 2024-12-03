@@ -238,7 +238,6 @@ func (this *ProcessRunner) StartProcess() error {
 			this.State.stopTime.Set(utils.New(time.Now()))
 			if this.State.userStopTime.Get() != nil {
 				this.internalOutput <- STOPPED
-				// this.Output <- output.NewStopSuccess(this.State.hasBeenKilled.Get())
 			}
 			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus && this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
 
@@ -266,7 +265,6 @@ func (this *ProcessRunner) StartProcess() error {
 			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
 			if this.State.exitStatus.Get() == nil {
 				this.internalOutput <- STARTED
-				// this.Output <- output.NewStartSuccess()
 				this.State.userStartTime.Set(utils.New(time.Now()))
 			} else {
 				this.internalOutput <- STOPPED_EARLY
@@ -319,13 +317,13 @@ func (this *ProcessRunner) StatusProcess() {
 	case this.State.stopTime.Get() != nil:
 		expectedExitStatus := this.TaskConfig.ExpectedExitStatus
 		actualExitStatus := this.State.exitStatus.Get()
-		result := ""
+		status += ""
 		if *actualExitStatus == expectedExitStatus {
-			result += "SUCCESS "
+			status += "SUCCESS "
 		} else {
-			result += "FAILURE "
+			status += "FAILURE "
 		}
-		result += fmt.Sprint(*actualExitStatus)
+		status += fmt.Sprint(*actualExitStatus)
 		if this.State.hasBeenKilled.Get() {
 			status += " KILLED"
 		} else if this.State.userStopTime.Get() != nil {
