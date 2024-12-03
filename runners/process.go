@@ -103,6 +103,8 @@ type ProcessResponse uint
 const (
 	STARTING ProcessResponse = iota
 	STARTING_ERROR
+	STOPPING_ERROR
+	RESTARTING_ERROR
 	RESTARTING
 	RETRYING
 	STARTED
@@ -254,8 +256,7 @@ func (this *ProcessRunner) StartProcess() error {
 	syscall.Umask(oldUmask)
 
 	if err != nil {
-		this.internalOutput <- STARTING_ERROR
-		this.commandErrors <- err
+		return err
 	} else {
 		go func() {
 			state, _ := command.Process.Wait()
@@ -373,6 +374,10 @@ func (this *ProcessRunner) StatusProcess() {
 func (this *ProcessRunner) Run() {
 	defer this.close()
 	go func() {
+		messageWithError := func(action string) string {
+			err := <-this.commandErrors
+			return fmt.Sprintf("failed to %s (%s)", action, err.Error())
+		}
 		for req := range this.internalOutput {
 			msg := fmt.Sprintf("[%d - %d] ", this.TaskId, this.Id)
 			switch req {
@@ -381,8 +386,11 @@ func (this *ProcessRunner) Run() {
 			case RESTARTING:
 				msg += "restarting"
 			case STARTING_ERROR:
-				err := <-this.commandErrors
-				msg += fmt.Sprintf("failed to start (%s)", err.Error())
+				msg += messageWithError("start")
+			case STOPPING_ERROR:
+				msg += messageWithError("stop")
+			case RESTARTING_ERROR:
+				msg += messageWithError("restart")
 			case RETRYING:
 				msg += "retrying"
 			case STARTED:
@@ -401,9 +409,8 @@ func (this *ProcessRunner) Run() {
 	if this.TaskConfig.StartAtLaunch {
 		this.internalOutput <- STARTING
 		if err := this.StartProcess(); err != nil {
-			this.Output <- output.NewStartFailure(err.Error())
-		} else {
-			this.Output <- output.NewStartSuccess()
+			this.internalOutput <- STARTING_ERROR
+			this.commandErrors <- err
 		}
 	}
 	for req := range this.Input {
@@ -415,25 +422,22 @@ func (this *ProcessRunner) Run() {
 		case input.Start:
 			this.internalOutput <- STARTING
 			if err := this.StartProcess(); err != nil {
-				this.Output <- output.NewStartFailure(err.Error())
-			} else {
-				this.Output <- output.NewStartSuccess()
+				this.internalOutput <- STARTING_ERROR
+				this.commandErrors <- err
 			}
 
 		case input.Stop:
 			this.internalOutput <- STOPPING
 			if err := this.StopProcess(); err != nil {
-				this.Output <- output.NewStopFailure(err.Error())
-			} else {
-				this.Output <- output.NewStopSuccess()
+				this.internalOutput <- STOPPING_ERROR
+				this.commandErrors <- err
 			}
 
 		case input.Restart:
 			this.internalOutput <- RESTARTING
 			if err := this.RestartProcess(); err != nil {
+				this.internalOutput <- RESTARTING_ERROR
 				this.Output <- output.NewRestartFailure(err.Error())
-			} else {
-				this.Output <- output.NewRestartSuccess()
 			}
 
 		case input.Shutdown:

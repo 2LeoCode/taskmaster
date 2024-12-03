@@ -2,7 +2,7 @@
   "$schema": "./tmconfig.schema.json",
   "tasks": [
     {
-      "name": "hello-world1",
+      "name": "hello-world",
       "command": "/usr/bin/env",
       "environment": {
         "HELLO": "Hello world!"

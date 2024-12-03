@@ -1,6 +1,7 @@
 package runners
 
 import (
+	"fmt"
 	"sync"
 
 	"taskmaster/config"
@@ -21,7 +22,6 @@ type TaskRunner struct {
 	Output chan<- output.Message
 
 	Processes             []*ProcessRunner
-	LocalProcessesOutput  chan utils.Pair[uint, processOutput.Message]
 	GlobalProcessesOutput chan []processOutput.Message
 
 	processInputs  []chan processInput.Message
@@ -40,7 +40,6 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 	processInputs := make([]chan processInput.Message, conf.Instances)
 	processOutputs := make([]chan processOutput.Message, conf.Instances)
 
-	localProcessesOutput := make(chan utils.Pair[uint, processOutput.Message])
 	globalProcessesOutput := make(chan []processOutput.Message)
 
 	instance := &TaskRunner{
@@ -49,7 +48,6 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 		Input:                 input,
 		Output:                output,
 		Processes:             make([]*ProcessRunner, conf.Instances),
-		LocalProcessesOutput:  localProcessesOutput,
 		GlobalProcessesOutput: globalProcessesOutput,
 		processInputs:         processInputs,
 		processOutputs:        processOutputs,
@@ -73,8 +71,6 @@ func newTaskRunner(manager config.Manager, id uint, input <-chan input.Message, 
 		go func() {
 			for msg := range out {
 				switch msg.(type) {
-				case helpers.Local:
-					localProcessesOutput <- utils.NewPair(uint(i), msg)
 				case helpers.Global:
 					instance.globalOutputPipes[i] <- msg
 				}
@@ -109,7 +105,6 @@ func (this *TaskRunner) close(processClosed *sync.WaitGroup) {
 		close(ch)
 	}
 	close(this.GlobalProcessesOutput)
-	close(this.LocalProcessesOutput)
 }
 
 func (this *TaskRunner) forwardGlobalMessage(message interface {
@@ -135,54 +130,20 @@ func (this *TaskRunner) Run() {
 
 	go func() {
 
-		for {
-			select {
+		for global := range this.GlobalProcessesOutput {
+			switch global[0].(type) {
 
-			case local, ok := <-this.LocalProcessesOutput:
-				if !ok {
-					return
-				}
-				switch local.Second.(type) {
-
-				case processOutput.Start:
-					this.Output <- output.NewStartProcess(
-						local.First,
-						local.Second.(processOutput.Start),
-					)
-
-				case processOutput.Stop:
-					this.Output <- output.NewStopProcess(
-						local.First,
-						local.Second.(processOutput.Stop),
-					)
-
-				case processOutput.Restart:
-					this.Output <- output.NewRestartProcess(
-						local.First,
-						local.Second.(processOutput.Restart),
-					)
-				}
-
-			case global, ok := <-this.GlobalProcessesOutput:
-				if !ok {
-					return
-				}
-				switch global[0].(type) {
-
-				case processOutput.Status:
-					this.Output <- output.NewStatus(
-						this.Id,
-						*this.Config.Name,
-						utils.Transform(
-							global,
-							func(i int, elem *processOutput.Message) processOutput.Status {
-								return (*elem).(processOutput.Status)
-							},
-						),
-					)
-
-				}
-
+			case processOutput.Status:
+				this.Output <- output.NewStatus(
+					this.Id,
+					*this.Config.Name,
+					utils.Transform(
+						global,
+						func(i int, elem *processOutput.Message) processOutput.Status {
+							return (*elem).(processOutput.Status)
+						},
+					),
+				)
 			}
 		}
 	}()
@@ -196,10 +157,7 @@ func (this *TaskRunner) Run() {
 		case input.StartProcess:
 			req := req.(input.StartProcess)
 			if req.ProcessId() >= uint(len(this.Processes)) {
-				this.Output <- output.NewStartProcessFailure(
-					req.ProcessId(),
-					"Invalid process ID",
-				)
+				fmt.Printf("\r \rTask %d failed to start process: invalid process id: %d.\n> ", this.Id, req.ProcessId())
 				break
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewStart()
@@ -207,10 +165,7 @@ func (this *TaskRunner) Run() {
 		case input.StopProcess:
 			req := req.(input.StopProcess)
 			if req.ProcessId() >= uint(len(this.Processes)) {
-				this.Output <- output.NewStopProcessFailure(
-					req.ProcessId(),
-					"Invalid process ID",
-				)
+				fmt.Printf("\r \rTask %d failed to stop process: invalid process id: %d.\n> ", this.Id, req.ProcessId())
 				break
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewStop()
@@ -218,10 +173,7 @@ func (this *TaskRunner) Run() {
 		case input.RestartProcess:
 			req := req.(input.RestartProcess)
 			if req.ProcessId() >= uint(len(this.Processes)) {
-				this.Output <- output.NewRestartProcessFailure(
-					req.ProcessId(),
-					"Invalid process ID",
-				)
+				fmt.Printf("\r \rTask %d failed to restart process: invalid process id: %d.\n> ", this.Id, req.ProcessId())
 				break
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewRestart()

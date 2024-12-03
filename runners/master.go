@@ -24,7 +24,6 @@ type MasterRunner struct {
 	Output chan<- output.Message
 
 	Tasks             []*TaskRunner
-	LocalTasksOutput  chan utils.Pair[uint, taskOutput.Message]
 	GlobalTasksOutput chan []taskOutput.Message
 
 	taskInputs  *[]chan taskInput.Message
@@ -51,7 +50,6 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 	taskInputs := make([]chan taskInput.Message, len(conf.Tasks))
 	taskOutputs := make([]chan taskOutput.Message, len(conf.Tasks))
 
-	localTasksOutput := make(chan utils.Pair[uint, taskOutput.Message])
 	globalTasksOutput := make(chan []taskOutput.Message)
 
 	tasks := make([]*TaskRunner, len(conf.Tasks))
@@ -61,7 +59,6 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 		Input:              in,
 		Output:             out,
 		Tasks:              tasks,
-		LocalTasksOutput:   localTasksOutput,
 		GlobalTasksOutput:  globalTasksOutput,
 		taskInputs:         &taskInputs,
 		taskOutputs:        &taskOutputs,
@@ -97,8 +94,6 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 	linkTaskOutput := func(idx uint, out <-chan taskOutput.Message) {
 		for msg := range out {
 			switch msg.(type) {
-			case helpers.Local:
-				localTasksOutput <- utils.NewPair(idx, msg)
 			case helpers.Global:
 				instance.globalOutputPipes[idx] <- msg
 			}
@@ -183,7 +178,6 @@ func (this *MasterRunner) close() {
 		close(ch)
 	}
 	close(this.GlobalTasksOutput)
-	close(this.LocalTasksOutput)
 	TaskmasterLogFile.Get().Close()
 	TaskmasterLogFile.Set(nil)
 	this.masterClosed.Done()
@@ -211,51 +205,18 @@ func (this *MasterRunner) Run() {
 	}
 
 	go func() {
-		for {
-			select {
+		for global := range this.GlobalTasksOutput {
+			switch global[0].(type) {
 
-			case local, ok := <-this.LocalTasksOutput:
-				if !ok {
-					return
-				}
-				switch local.Second.(type) {
-
-				case taskOutput.StartProcess:
-					this.Output <- output.NewStartProcess(
-						local.First,
-						local.Second.(taskOutput.StartProcess),
-					)
-
-				case taskOutput.StopProcess:
-					this.Output <- output.NewStopProcess(
-						local.First,
-						local.Second.(taskOutput.StopProcess),
-					)
-
-				case taskOutput.RestartProcess:
-					this.Output <- output.NewRestartProcess(
-						local.First,
-						local.Second.(taskOutput.RestartProcess),
-					)
-
-				}
-
-			case global, ok := <-this.GlobalTasksOutput:
-				if !ok {
-					return
-				}
-				switch global[0].(type) {
-
-				case taskOutput.Status:
-					this.Output <- output.NewStatus(
-						utils.Transform(
-							global,
-							func(i int, elem *taskOutput.Message) taskOutput.Status {
-								return (*elem).(taskOutput.Status)
-							},
-						),
-					)
-				}
+			case taskOutput.Status:
+				this.Output <- output.NewStatus(
+					utils.Transform(
+						global,
+						func(i int, elem *taskOutput.Message) taskOutput.Status {
+							return (*elem).(taskOutput.Status)
+						},
+					),
+				)
 			}
 		}
 	}()
@@ -290,11 +251,6 @@ func (this *MasterRunner) Run() {
 			case input.StartProcess:
 				req := req.(input.StartProcess)
 				if req.TaskId() >= uint(len(this.Tasks)) {
-					this.Output <- output.NewStartProcessFailure(
-						req.TaskId(),
-						req.ProcessId(),
-						"Invalid task ID",
-					)
 					break
 				}
 				(*this.taskInputs)[req.TaskId()] <- taskInput.NewStartProcess(req.ProcessId())
@@ -302,11 +258,6 @@ func (this *MasterRunner) Run() {
 			case input.StopProcess:
 				req := req.(input.StopProcess)
 				if req.TaskId() >= uint(len(this.Tasks)) {
-					this.Output <- output.NewStopProcessFailure(
-						req.TaskId(),
-						req.ProcessId(),
-						"Invalid task ID",
-					)
 					break
 				}
 				(*this.taskInputs)[req.TaskId()] <- taskInput.NewStopProcess(req.ProcessId())
@@ -314,11 +265,6 @@ func (this *MasterRunner) Run() {
 			case input.RestartProcess:
 				req := req.(input.RestartProcess)
 				if req.TaskId() >= uint(len(this.Tasks)) {
-					this.Output <- output.NewRestartProcessFailure(
-						req.TaskId(),
-						req.ProcessId(),
-						"Invalid task ID",
-					)
 					break
 				}
 				(*this.taskInputs)[req.TaskId()] <- taskInput.NewRestartProcess(req.ProcessId())
