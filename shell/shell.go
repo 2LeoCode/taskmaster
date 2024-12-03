@@ -130,34 +130,34 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 					}
 				}
 			case output.StartProcess:
-				res := res.(output.StartProcess)
-				switch res.(type) {
-				case helpers.Success:
-					fmt.Printf("Starting program %d in task %d...\n", res.ProcessId(), res.TaskId())
-				case helpers.Failure:
-					reason := res.(helpers.Failure).Reason()
-					fmt.Printf("Failed to start program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
-				}
+				// res := res.(output.StartProcess)
+				// switch res.(type) {
+				// case helpers.Success:
+				// 	fmt.Printf("Starting program %d in task %d...\n", res.ProcessId(), res.TaskId())
+				// case helpers.Failure:
+				// 	reason := res.(helpers.Failure).Reason()
+				// 	fmt.Printf("Failed to start program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
+				// }
 
 			case output.StopProcess:
-				res := res.(output.StopProcess)
-				switch res.(type) {
-				case helpers.Success:
-					fmt.Printf("Stopping program %d in task %d...\n", res.ProcessId(), res.TaskId())
-				case helpers.Failure:
-					reason := res.(helpers.Failure).Reason()
-					fmt.Printf("Failed to stop program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
-				}
+				// res := res.(output.StopProcess)
+				// switch res.(type) {
+				// case helpers.Success:
+				// 	fmt.Printf("Stopping program %d in task %d...\n", res.ProcessId(), res.TaskId())
+				// case helpers.Failure:
+				// 	reason := res.(helpers.Failure).Reason()
+				// 	fmt.Printf("Failed to stop program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
+				// }
 
 			case output.RestartProcess:
-				res := res.(output.RestartProcess)
-				switch res.(type) {
-				case helpers.Success:
-					fmt.Printf("Restarting programm %d in task %d...\n", res.ProcessId(), res.TaskId())
-				case helpers.Failure:
-					reason := res.(helpers.Failure).Reason()
-					fmt.Printf("Failed to restart program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
-				}
+				// res := res.(output.RestartProcess)
+				// switch res.(type) {
+				// case helpers.Success:
+				// 	fmt.Printf("Restarting programm %d in task %d...\n", res.ProcessId(), res.TaskId())
+				// case helpers.Failure:
+				// 	reason := res.(helpers.Failure).Reason()
+				// 	fmt.Printf("Failed to restart program %d in task %d: %s.\n", res.ProcessId(), res.TaskId(), reason)
+				// }
 
 			case output.Reload:
 				reloadInProgress.Done()

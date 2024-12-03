@@ -65,6 +65,7 @@ type processState struct {
 	hasBeenKilled   atom.Atom[bool]
 	command         atom.Atom[*exec.Cmd]
 	hasBeenShutdown atom.Atom[bool]
+	stoppedEarly    atom.Atom[bool]
 }
 
 func (this *processState) Reset() {
@@ -78,6 +79,7 @@ func (this *processState) Reset() {
 		hasBeenKilled:   atom.NewAtom(false),
 		startRetries:    this.startRetries,
 		hasBeenShutdown: this.hasBeenShutdown,
+		stoppedEarly:    this.stoppedEarly,
 	}
 }
 
@@ -92,14 +94,20 @@ func NewProcessState() *processState {
 		hasBeenKilled:   atom.NewAtom(false),
 		startRetries:    atom.NewAtom[*uint](nil),
 		hasBeenShutdown: atom.NewAtom(false),
+		stoppedEarly:    atom.NewAtom(false),
 	}
 }
 
 type ProcessResponse uint
 
 const (
-	STARTED ProcessResponse = iota
+	STARTING ProcessResponse = iota
+	STARTING_ERROR
+	RESTARTING
+	RETRYING
+	STARTED
 	STOPPED_EARLY
+	STOPPING
 	STOPPED
 )
 
@@ -119,6 +127,7 @@ type ProcessRunner struct {
 	State *processState
 
 	internalOutput chan ProcessResponse
+	commandErrors  chan error
 }
 
 func (this *ProcessRunner) close() {
@@ -210,6 +219,7 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		Output:         output,
 		State:          NewProcessState(),
 		internalOutput: make(chan ProcessResponse),
+		commandErrors:  make(chan error),
 	}
 	if stdoutLogFile, err := getLogFile(STDOUT, taskConf.Stdout, conf, taskId, id); err != nil {
 		return nil, err
@@ -243,7 +253,8 @@ func (this *ProcessRunner) StartProcess() error {
 	syscall.Umask(oldUmask)
 
 	if err != nil {
-		return fmt.Errorf("command failed to run (%s)", err.Error())
+		this.internalOutput <- STARTING_ERROR
+		this.commandErrors <- err
 	} else {
 		go func() {
 			command.Wait()
@@ -252,12 +263,13 @@ func (this *ProcessRunner) StartProcess() error {
 			))
 			this.State.stopTime.Set(utils.New(time.Now()))
 			this.internalOutput <- STOPPED
-			if this.State.userStartTime.Get() == nil {
 
-				this.internalOutput <- STOPPED_EARLY
+			if this.State.userStartTime.Get() == nil {
+				this.State.stoppedEarly.Set(true)
 				if this.TaskConfig.Restart != "never" && (this.TaskConfig.RestartAttempts == 0 || *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts) {
 					this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
 					this.State.Reset()
+					this.internalOutput <- RETRYING
 					this.StartProcess()
 					return
 				}
@@ -268,6 +280,7 @@ func (this *ProcessRunner) StartProcess() error {
 					if this.TaskConfig.RestartAttempts == 0 || *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
 						this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
 						this.State.Reset()
+						this.internalOutput <- RETRYING
 						this.StartProcess()
 						return
 					}
@@ -280,6 +293,7 @@ func (this *ProcessRunner) StartProcess() error {
 			this.State.userStartTime.Set(utils.New(time.Now()))
 			if this.State.exitStatus.Get() == nil {
 				this.internalOutput <- STARTED
+				this.State.stoppedEarly.Set(false)
 			}
 		}()
 	}
@@ -343,75 +357,80 @@ func (this *ProcessRunner) StatusProcess() {
 		status += "RUNNING"
 	}
 	if this.TaskConfig.RestartAttempts > 0 {
-	status += fmt.Sprintf("(Restarted %d/%d)", *this.State.startRetries.Get(), this.TaskConfig.RestartAttempts)
+		status += fmt.Sprintf(" [Restarted %d/%d]", *this.State.startRetries.Get(), this.TaskConfig.RestartAttempts)
+	}
+	if this.State.stoppedEarly.Get() {
+		status += " (stopped early)"
 	}
 	this.Output <- output.NewStatus(this.Id, status)
 }
 
 func (this *ProcessRunner) Run() {
 	defer this.close()
-	//here autostar
+	go func() {
+		for req := range this.internalOutput {
+			msg := fmt.Sprintf("[%d - %d] ", this.TaskId, this.Id)
+			switch req {
+			case STARTING:
+				msg += "starting"
+			case RESTARTING:
+				msg += "restarting"
+			case STARTING_ERROR:
+				err := <-this.commandErrors
+				msg += fmt.Sprintf("failed to start (%s)", err.Error())
+			case RETRYING:
+				msg += "retrying"
+			case STARTED:
+				msg += "started"
+			case STOPPING:
+				msg += "stopping"
+			case STOPPED:
+				msg += "stopped"
+			}
+			fmt.Printf("\r \r%s\n> ", msg)
+			fmt.Fprintf(TaskmasterLogFile.Get(), "%s: %s\n", time.Now().Format("06/01/02 15:04:05"), msg)
+		}
+	}()
 	if this.TaskConfig.StartAtLaunch {
+		this.internalOutput <- STARTING
 		if err := this.StartProcess(); err != nil {
 			this.Output <- output.NewStartFailure(err.Error())
 		} else {
 			this.Output <- output.NewStartSuccess()
 		}
 	}
-	for {
-		select {
-		case req, ok := <-this.internalOutput:
-			if !ok {
-				return
-			}
-			msg := "\r \r"
-			switch req {
-			case STARTED:
-				msg += "process %d of task %d succesfully started"
-			case STOPPED_EARLY:
-				msg += "process %d of task %d failed to start: stopped early"
-			case STOPPED:
-				msg += "process %d of task %d exited"
-			}
-			msg = fmt.Sprintf(msg, this.Id, this.TaskId) + "\n> "
-			fmt.Print(msg)
-			fmt.Fprint(TaskmasterLogFile.Get(), msg)
+	for req := range this.Input {
+		switch req.(type) {
 
-		case req, ok := <-this.Input:
-			if !ok {
-				// Input channel has been closed
-				return
+		case input.Status:
+			this.StatusProcess()
+
+		case input.Start:
+			this.internalOutput <- STARTING
+			if err := this.StartProcess(); err != nil {
+				this.Output <- output.NewStartFailure(err.Error())
+			} else {
+				this.Output <- output.NewStartSuccess()
 			}
 
-			switch req.(type) {
-
-			case input.Status:
-				this.StatusProcess()
-
-			case input.Start:
-				if err := this.StartProcess(); err != nil {
-					this.Output <- output.NewStartFailure(err.Error())
-				} else {
-					this.Output <- output.NewStartSuccess()
-				}
-
-			case input.Stop:
-				if err := this.StopProcess(); err != nil {
-					this.Output <- output.NewStopFailure(err.Error())
-				} else {
-					this.Output <- output.NewStopSuccess()
-				}
-
-			case input.Restart:
-				if err := this.RestartProcess(); err != nil {
-					this.Output <- output.NewRestartFailure(err.Error())
-				} else {
-					this.Output <- output.NewRestartSuccess()
-				}
-
-			case input.Shutdown:
-				return
+		case input.Stop:
+			this.internalOutput <- STOPPING
+			if err := this.StopProcess(); err != nil {
+				this.Output <- output.NewStopFailure(err.Error())
+			} else {
+				this.Output <- output.NewStopSuccess()
 			}
+
+		case input.Restart:
+			this.internalOutput <- RESTARTING
+			if err := this.RestartProcess(); err != nil {
+				this.Output <- output.NewRestartFailure(err.Error())
+			} else {
+				this.Output <- output.NewRestartSuccess()
+			}
+
+		case input.Shutdown:
+			return
 		}
 	}
 }

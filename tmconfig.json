@@ -11,5 +11,5 @@
       "stopSignal": "SIGINT"
     }
   ],
-  "logDir": "./log"
+  "logDir": "./logs"
 }

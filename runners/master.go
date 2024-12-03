@@ -73,7 +73,7 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 		globalOutputPipes:  make([]chan taskOutput.Message, len(taskOutputs)),
 		reloadSignal:       make(chan os.Signal),
 	}
-	if globalLogFile, err := os.OpenFile(fmt.Sprintf("%s/taskmaster_%s.log", conf.LogDir, time.Now().Format("060102_150405")), os.O_CREATE|os.O_APPEND, 0o666); err != nil {
+	if globalLogFile, err := os.OpenFile(fmt.Sprintf("%s/taskmaster_%s.log", conf.LogDir, time.Now().Format("060102_150405")), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666); err != nil {
 		return nil, err
 	} else {
 		TaskmasterLogFile.Set(globalLogFile)
