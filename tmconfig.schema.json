@@ -74,14 +74,14 @@
             "description": "The signal used to quit a process gracefully\nDefault is 'SIGSTOP'"
           },
           "stdout": {
-            "enum": ["ignore", "inherit", "redirect"],
+            "enum": ["ignore", "redirect"],
             "default": "redirect",
-            "description": "'ignore': ignore stdout\n'inherit': show stdout on taskmaster console\n'redirect': redirect stdout to a log file\nDefault is 'redirect'"
+            "description": "'ignore': ignore stdout\n'redirect': redirect stdout to a log file\nDefault is 'redirect'"
           },
           "stderr": {
-            "enum": ["ignore", "inherit", "redirect"],
+            "enum": ["ignore", "redirect"],
             "default": "redirect",
-            "description": "'ignore': ignore stderr\n'inherit': show stderr on taskmaster console\n'redirect': redirect stderr to a log file\nDefault is 'redirect'"
+            "description": "'ignore': ignore stderr\n'redirect': redirect stderr to a log file\nDefault is 'redirect'"
           },
 
           "environment": {
@@ -107,15 +107,15 @@
         },
         "if": {
           "properties": {
-            "restart": { "const": "on-failure" }
+            "restart": { "const": "never" }
           }
         },
-        "then": {
+        "else": {
           "properties": {
             "restartAttempts": {
               "type": "number",
               "default": 5,
-              "description": "The number of restart attempts (or 0 for infinite attemps) if 'restart' is set to 'on-failure'\nDefault is 5",
+              "description": "The number of restart attempts (or 0 for infinite attemps) if 'restart' is not set to 'never'\nDefault is 5",
               "minimum": 0
             }
           }

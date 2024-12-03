@@ -145,10 +145,8 @@ func (this *ProcessRunner) close() {
 func (this *ProcessRunner) initCommand() {
 	command := exec.Command(*this.TaskConfig.Command, this.TaskConfig.Arguments...)
 
-	command.Env = make([]string, len(this.TaskConfig.Environment))
-	i := 0
 	for k, v := range maps.All(this.TaskConfig.Environment) {
-		command.Env[i] = fmt.Sprintf("%s=%s", k, v)
+		command.Env = append(command.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
 	command.Dir = this.TaskConfig.WorkingDirectory

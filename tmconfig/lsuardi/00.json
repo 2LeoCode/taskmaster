@@ -4,7 +4,41 @@
   "tasks": [
     {
       "name": "task-00",
-      "restart": "always"
+      "command": "bash",
+      "arguments": ["-c", "sleep 1;>&2 echo $STDERR; echo $STDOUT; sleep 1"],
+      "environment": {
+        "PATH": "/usr/bin",
+        "STDOUT": "stdout",
+        "STDERR": "stderr"
+      },
+      "restart": "always",
+      "instances": 5,
+      "restartAttempts": 2,
+      "startTime": 1000
+    },
+    {
+      "name": "task-01",
+      "command": "env",
+      "environment": {
+        "PATH": "/usr/bin",
+        "THIS": "IS",
+        "IS": "THIS",
+        "AWESOME": "AWESOME"
+      },
+      "instances": 4,
+      "stderr": "ignore",
+      "restart": "never"
+    },
+    {
+      "name": "task-02",
+      "command": "sleep",
+      "arguments": ["infinity"],
+      "instances": 10,
+      "environment": {
+        "PATH": "/usr/bin"
+      },
+      "stdout": "ignore",
+      "stderr": "ignore"
     }
   ]
 }
