@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"slices"
@@ -186,12 +187,12 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 		Arguments:          []string{},
 		StartAtLaunch:      true,
 		Instances:          1,
-		Restart:            "on-failure",
+		Restart:            "unless-stopped",
 		RestartAttempts:    5,
 		ExpectedExitStatus: 0,
 		StartTime:          0,
 		StopTime:           5000,
-		StopSignal:         "SIGQUIT",
+		StopSignal:         "SIGTERM",
 		Stdout:             "redirect",
 		Stderr:             "redirect",
 		Environment:        map[string]string{},
@@ -233,19 +234,25 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 		return newTaskEnumPropertyError("stderr", task.Stderr, stdioValues)
 
 	case task.Permissions != nil && *task.Permissions > 777:
-		return newTaskInvalidPropertyError("permissions", strconv.Itoa(int(*task.Permissions)), "umask value cannot be greater than 777")
+		return newTaskInvalidPropertyError("permissions", fmt.Sprint(*task.Permissions), "umask value cannot be greater than 777")
 	}
 
 	if task.Permissions == nil {
 		task.Permissions = utils.New(uint(utils.GetUmask()))
+	} else if umask, err := strconv.ParseUint(fmt.Sprint(*task.Permissions), 8, 0); err != nil {
+		return newTaskInvalidPropertyError("permissions", fmt.Sprint(*task.Permissions), "umask value must be an octal value")
 	} else {
-		*task.Permissions = uint(utils.Must(strconv.ParseUint(fmt.Sprint(*task.Permissions), 8, 0)))
+		*task.Permissions = uint(umask)
 	}
 
 	if fileInfo, err := os.Stat(task.WorkingDirectory); err != nil {
 		return errors.New(fmt.Sprintf("Failed to get information on the current working directory (%s)", err))
 	} else if !fileInfo.IsDir() {
 		return newTaskInvalidPropertyError("workingDirectory", task.WorkingDirectory, "not a directory")
+	}
+
+	for k, v := range maps.All(task.Environment) {
+		task.Environment[k] = os.ExpandEnv(v)
 	}
 
 	*this = Task(task)

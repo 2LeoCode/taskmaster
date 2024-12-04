@@ -40,8 +40,8 @@
           },
           "restart": {
             "enum": ["always", "never", "on-failure", "unless-stopped"],
-            "default": "on-failure",
-            "description": "'always': always restart the process if it exits\n'never': never restart the process\n'on-failure': restart if the process exits with an error code\n'unless-stopped': restart the process except if the user stops it manually through the console\nDefault is 'on-failure'"
+            "default": "unless-stopped",
+            "description": "'always': always restart the process if it exits\n'never': never restart the process\n'on-failure': restart if the process exits with an error code\n'unless-stopped': restart the process except if the user stops it manually through the console\nDefault is 'unless-stopped'"
           },
           "expectedExitStatus": {
             "type": "number",
@@ -70,7 +70,7 @@
               "SIGSTOP",
               "SIGTSTP"
             ],
-            "default": "SIGSTOP",
+            "default": "SIGTERM",
             "description": "The signal used to quit a process gracefully\nDefault is 'SIGSTOP'"
           },
           "stdout": {
@@ -101,7 +101,7 @@
           "permissions": {
             "type": ["number", "null"],
             "default": null,
-            "description": "The permissions umask to set before launching the program, or null to leave the permissions as they are\nDefault is null",
+            "description": "The permissions umask to set before launching the program, or null to leave the permissions as they are\nThe master process's umask is used by default",
             "maximum": 777
           }
         },

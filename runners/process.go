@@ -56,7 +56,7 @@ const ERROR_START_ALREADY_STARTED string = "Process already started. " + HINT_RE
 const ERROR_START_STOPPED_EARLY = "Process stopped before the configured time"
 
 type processState struct {
-	startRetries    atom.Atom[*uint]
+	startRetries    atom.Atom[uint]
 	userStartTime   atom.Atom[*time.Time]
 	startTime       atom.Atom[*time.Time]
 	userStopTime    atom.Atom[*time.Time]
@@ -66,6 +66,7 @@ type processState struct {
 	command         atom.Atom[*exec.Cmd]
 	hasBeenShutdown atom.Atom[bool]
 	stoppedEarly    atom.Atom[bool]
+	failedToStart   atom.Atom[bool]
 }
 
 func (this *processState) Reset() {
@@ -76,6 +77,7 @@ func (this *processState) Reset() {
 		stopTime:        atom.NewAtom[*time.Time](nil),
 		exitStatus:      atom.NewAtom[*int](nil),
 		command:         atom.NewAtom[*exec.Cmd](nil),
+		failedToStart:   atom.NewAtom(false),
 		hasBeenKilled:   atom.NewAtom(false),
 		startRetries:    this.startRetries,
 		hasBeenShutdown: this.hasBeenShutdown,
@@ -91,8 +93,9 @@ func NewProcessState() *processState {
 		stopTime:        atom.NewAtom[*time.Time](nil),
 		exitStatus:      atom.NewAtom[*int](nil),
 		command:         atom.NewAtom[*exec.Cmd](nil),
+		startRetries:    atom.NewAtom[uint](0),
+		failedToStart:   atom.NewAtom(false),
 		hasBeenKilled:   atom.NewAtom(false),
-		startRetries:    atom.NewAtom[*uint](nil),
 		hasBeenShutdown: atom.NewAtom(false),
 		stoppedEarly:    atom.NewAtom(false),
 	}
@@ -230,7 +233,6 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		instance.StdoutLogFile = stdoutLogFile
 		instance.StderrLogFile = stderrLogFile
 	}
-	instance.State.startRetries.Set(utils.New(uint(0)))
 	return instance, nil
 }
 
@@ -254,40 +256,41 @@ func (this *ProcessRunner) StartProcess() error {
 	syscall.Umask(oldUmask)
 
 	if err != nil {
+		this.State.failedToStart.Set(true)
 		return err
 	} else {
 		go func() {
+			retry := func() {
+				this.State.startRetries.Update(func(old uint) uint { return old + 1 })
+				this.State.Reset()
+				this.internalOutput <- RETRYING
+				this.StartProcess()
+			}
+
 			state, _ := command.Process.Wait()
 			exitCode := state.ExitCode()
 			this.State.exitStatus.Set(utils.New(
 				exitCode,
 			))
 			this.State.stopTime.Set(utils.New(time.Now()))
+			hasAttempts := this.TaskConfig.RestartAttempts == 0 ||
+				this.State.startRetries.Get() < this.TaskConfig.RestartAttempts
 			if exitCode == this.TaskConfig.ExpectedExitStatus {
 				this.internalOutput <- STOPPED_SUCCESSFULLY
 			} else {
 				this.internalOutput <- STOPPED_UNSUCCESSFULLY
 			}
-			if this.State.userStartTime.Get() == nil {
-				this.State.stoppedEarly.Set(true)
-				if this.TaskConfig.Restart != "never" && (this.TaskConfig.RestartAttempts == 0 || *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts) {
-					this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
-					this.State.Reset()
-					this.internalOutput <- RETRYING
-					this.StartProcess()
-					return
-				}
-			}
-			if (*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus && this.TaskConfig.Restart != "never") || this.TaskConfig.Restart == "always" {
-
-				if !(this.TaskConfig.Restart == "unless-stopped" && this.State.userStopTime.Get() != nil) {
-					if this.TaskConfig.RestartAttempts == 0 || *this.State.startRetries.Get() < this.TaskConfig.RestartAttempts {
-						this.State.startRetries.Update(func(old *uint) *uint { return utils.New(*old + 1) })
-						this.State.Reset()
-						this.internalOutput <- RETRYING
-						this.StartProcess()
-						return
+			if !this.State.hasBeenShutdown.Get() {
+				if this.State.userStartTime.Get() == nil {
+					this.State.stoppedEarly.Set(true)
+					if hasAttempts && this.TaskConfig.Restart != "never" {
+						retry()
 					}
+				} else if hasAttempts && (this.TaskConfig.Restart == "always" ||
+					(this.TaskConfig.Restart == "unless-stopped" &&
+						this.State.userStopTime.Get() != nil &&
+						*this.State.exitStatus.Get() != this.TaskConfig.ExpectedExitStatus)) {
+					retry()
 				}
 			}
 		}()
@@ -296,8 +299,8 @@ func (this *ProcessRunner) StartProcess() error {
 			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
 			this.State.userStartTime.Set(utils.New(time.Now()))
 			if this.State.exitStatus.Get() == nil {
-				this.internalOutput <- STARTED
 				this.State.stoppedEarly.Set(false)
+				this.internalOutput <- STARTED
 			}
 		}()
 	}
@@ -338,6 +341,8 @@ func (this *ProcessRunner) RestartProcess() error {
 func (this *ProcessRunner) StatusProcess() {
 	status := ""
 	switch {
+	case this.State.failedToStart.Get():
+		status += "FAILED_TO_START"
 	case this.State.stopTime.Get() != nil:
 		expectedExitStatus := this.TaskConfig.ExpectedExitStatus
 		actualExitStatus := this.State.exitStatus.Get()
@@ -360,8 +365,9 @@ func (this *ProcessRunner) StatusProcess() {
 	default:
 		status += "RUNNING"
 	}
-	if this.TaskConfig.RestartAttempts > 0 {
-		status += fmt.Sprintf(" [Restarted %d/%d]", *this.State.startRetries.Get(), this.TaskConfig.RestartAttempts)
+	retries := this.State.startRetries.Get()
+	if this.TaskConfig.RestartAttempts != 0 && retries != 0 {
+		status += fmt.Sprintf(" [Restarted %d/%d]", retries, this.TaskConfig.RestartAttempts)
 	}
 	if this.State.stoppedEarly.Get() {
 		status += " (stopped early)"

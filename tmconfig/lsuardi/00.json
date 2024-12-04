@@ -31,14 +31,18 @@
     },
     {
       "name": "task-02",
-      "command": "sleep",
-      "arguments": ["infinity"],
+      "command": "bash",
+      "arguments": ["-c", "trap 'echo exit clean' EXIT; env; sleep infinity"],
       "instances": 10,
       "environment": {
-        "PATH": "/usr/bin"
+        "PATH": "$PATH"
       },
       "stdout": "ignore",
       "stderr": "ignore"
+    },
+    {
+      "name": "task-03",
+      "command": "notexist"
     }
   ]
 }

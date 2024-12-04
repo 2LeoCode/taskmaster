@@ -169,9 +169,6 @@ func (this *MasterRunner) close() {
 	for _, ch := range *this.taskInputs {
 		close(ch)
 	}
-	if this.shouldCloseOutput.Get() {
-		close(this.Output)
-	}
 	close(this.stopSignal)
 	this.tasksClosed.Wait()
 	for _, ch := range this.globalOutputPipes {
@@ -180,6 +177,9 @@ func (this *MasterRunner) close() {
 	close(this.GlobalTasksOutput)
 	TaskmasterLogFile.Get().Close()
 	TaskmasterLogFile.Set(nil)
+	if this.shouldCloseOutput.Get() {
+		close(this.Output)
+	}
 	this.masterClosed.Done()
 }
 

@@ -37,12 +37,18 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 	scanner.Split(bufio.ScanLines)
 
 	go func() {
+		executeCommand := func(command []string) {
+			commandOk.Add(1)
+			commands <- command
+			commandOk.Wait()
+		}
+
 		for !shouldStop.Get() {
 			fmt.Print("> ")
 			reloadInProgress.Wait()
 			if ok := scanner.Scan(); !ok {
-				commands <- []string{"shutdown"}
-				break
+				executeCommand([]string{"shutdown"})
+				return
 			}
 			cmd := scanner.Text()
 			tokens := strings.Split(cmd, " ")
@@ -50,9 +56,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			if len(tokens) == 0 {
 				continue
 			}
-			commandOk.Add(1)
-			commands <- tokens
-			commandOk.Wait()
+			executeCommand(tokens)
 		}
 	}()
 
@@ -111,14 +115,16 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 
 			case "shutdown":
 				out <- input.NewShutdown()
-				return
 
 			default:
 				fmt.Printf("invalid command: %s (type `help` to get a list of available commands)\n", cmd[0])
 			}
 			commandOk.Done()
 
-		case res := <-in:
+		case res, ok := <-in:
+			if !ok {
+				return
+			}
 			fmt.Print("\r \r")
 			switch res.(type) {
 			case output.Status:
