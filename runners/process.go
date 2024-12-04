@@ -142,9 +142,10 @@ type ProcessRunner struct {
 
 func (this *ProcessRunner) close() {
 	this.State.hasBeenShutdown.Set(true)
+
 	this.StopProcess()
-	close(this.Output)
 	this.State.command.Get().Wait()
+	close(this.Output)
 	this.StdoutLogFile.Close()
 	this.StderrLogFile.Close()
 }
@@ -305,24 +306,23 @@ func (this *ProcessRunner) StartProcess() error {
 }
 
 func (this *ProcessRunner) StopProcess() {
-	command := this.State.command.Get()
-	this.State.userStopTime.Set(utils.New(time.Now()))
-	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
-	go func() {
-		time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
-		if this.State.exitStatus.Get() != nil {
-			return
-		}
-		this.State.hasBeenKilled.Set(true)
-		command.Process.Kill()
-	}()
+	if process := this.State.command.Get().Process; process != nil {
+		this.State.userStopTime.Set(utils.New(time.Now()))
+		process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
+		go func() {
+			time.Sleep(time.Duration(this.TaskConfig.StopTime) * time.Millisecond)
+			if this.State.exitStatus.Get() == nil {
+				this.State.hasBeenKilled.Set(true)
+				process.Kill()
+			}
+		}()
+	}
 }
 
 func (this *ProcessRunner) RestartProcess() {
 	this.StopProcess()
-	command := this.State.command.Get()
 	go func() {
-		command.Wait()
+		this.State.command.Get().Wait()
 		this.State.Reset()
 		if err := this.StartProcess(); err != nil {
 			this.internalOutput <- RESTARTING_ERROR
@@ -440,7 +440,7 @@ func (this *ProcessRunner) Run() {
 			var err *string
 			if this.State.failedToStart.Get() {
 				err = utils.New(ERROR_PREVIOUSLY_FAILED)
-			} else if this.State.startTime.Get() == nil || this.State.command.Get().Process == nil {
+			} else if this.State.startTime.Get() == nil {
 				err = utils.New(ERROR_STOP_STOPPED)
 			}
 			if err != nil {

@@ -37,6 +37,7 @@
       "environment": {
         "PATH": "$PATH"
       },
+      "startTime": 3000,
       "stdout": "ignore",
       "stderr": "ignore"
     },
