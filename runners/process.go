@@ -54,6 +54,8 @@ const ERROR_START_STOPPED string = "Process already completed. " + HINT_RESTART
 const ERROR_START_KILLED string = "Process was killed. " + HINT_RESTART
 const ERROR_START_ALREADY_STARTED string = "Process already started. " + HINT_RESTART
 const ERROR_START_STOPPED_EARLY = "Process stopped before the configured time"
+const ERROR_PREVIOUSLY_FAILED = "Process previously failed to start, check your configuration"
+const ERROR_STOP_STOPPED = "Process already stopped"
 
 type processState struct {
 	startRetries    atom.Atom[uint]
@@ -109,7 +111,6 @@ type ProcessResponse uint
 const (
 	STARTING ProcessResponse = iota
 	STARTING_ERROR
-	STOPPING_ERROR
 	RESTARTING_ERROR
 	RESTARTING
 	RETRYING
@@ -241,14 +242,6 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 
 func (this *ProcessRunner) StartProcess() error {
 	this.initCommand()
-	configStartTime := this.TaskConfig.StartTime
-	if this.State.hasBeenKilled.Get() {
-		return errors.New(ERROR_START_KILLED)
-	} else if this.State.startTime.Get() != nil {
-		return errors.New(ERROR_START_ALREADY_STARTED)
-	} else if this.State.userStopTime.Get() != nil {
-		return errors.New(ERROR_START_STOPPED)
-	}
 
 	this.State.startTime.Set(utils.New(time.Now()))
 	this.State.exitStatus.Set(nil)
@@ -272,7 +265,6 @@ func (this *ProcessRunner) StartProcess() error {
 
 			state, _ := command.Process.Wait()
 			exitCode := state.ExitCode()
-			println("exit code", exitCode)
 			this.State.exitStatus.Set(utils.New(
 				exitCode,
 			))
@@ -301,7 +293,7 @@ func (this *ProcessRunner) StartProcess() error {
 		}()
 
 		go func() {
-			time.Sleep(time.Duration(configStartTime) * time.Millisecond)
+			time.Sleep(time.Duration(this.TaskConfig.StartTime) * time.Millisecond)
 			this.State.userStartTime.Set(utils.New(time.Now()))
 			if this.State.exitStatus.Get() == nil {
 				this.State.stoppedEarly.Set(false)
@@ -312,11 +304,8 @@ func (this *ProcessRunner) StartProcess() error {
 	return nil
 }
 
-func (this *ProcessRunner) StopProcess() error {
+func (this *ProcessRunner) StopProcess() {
 	command := this.State.command.Get()
-	if this.State.startTime.Get() == nil || command.Process == nil {
-		return errors.New("process is not started")
-	}
 	this.State.userStopTime.Set(utils.New(time.Now()))
 	command.Process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
 	go func() {
@@ -327,20 +316,19 @@ func (this *ProcessRunner) StopProcess() error {
 		this.State.hasBeenKilled.Set(true)
 		command.Process.Kill()
 	}()
-	return nil
 }
 
-func (this *ProcessRunner) RestartProcess() error {
-	if err := this.StopProcess(); err != nil {
-		return err
-	}
+func (this *ProcessRunner) RestartProcess() {
+	this.StopProcess()
 	command := this.State.command.Get()
 	go func() {
 		command.Wait()
 		this.State.Reset()
-		this.StartProcess()
+		if err := this.StartProcess(); err != nil {
+			this.internalOutput <- RESTARTING_ERROR
+			this.commandErrors <- err
+		}
 	}()
-	return nil
 }
 
 func (this *ProcessRunner) StatusProcess() {
@@ -384,9 +372,9 @@ func (this *ProcessRunner) StatusProcess() {
 func (this *ProcessRunner) Run() {
 	defer this.close()
 	go func() {
-		messageWithError := func(action string) string {
+		actionError := func(action string) string {
 			err := <-this.commandErrors
-			return fmt.Sprintf("failed to %s (%s)", action, err.Error())
+			return fmt.Sprintf("failed to %s: %s", action, err.Error())
 		}
 		for req := range this.internalOutput {
 			msg := fmt.Sprintf("[%d - %d] ", this.TaskId, this.Id)
@@ -396,11 +384,9 @@ func (this *ProcessRunner) Run() {
 			case RESTARTING:
 				msg += "restarting"
 			case STARTING_ERROR:
-				msg += messageWithError("start")
-			case STOPPING_ERROR:
-				msg += messageWithError("stop")
+				msg += actionError("start")
 			case RESTARTING_ERROR:
-				msg += messageWithError("restart")
+				msg += actionError("restart")
 			case RETRYING:
 				msg += "retrying"
 			case STARTED:
@@ -430,6 +416,20 @@ func (this *ProcessRunner) Run() {
 			this.StatusProcess()
 
 		case input.Start:
+			var err *string
+			if this.State.failedToStart.Get() {
+				err = utils.New(ERROR_PREVIOUSLY_FAILED)
+			} else if this.State.hasBeenKilled.Get() {
+				err = utils.New(ERROR_START_KILLED)
+			} else if this.State.startTime.Get() != nil {
+				err = utils.New(ERROR_START_ALREADY_STARTED)
+			} else if this.State.userStopTime.Get() != nil {
+				err = utils.New(ERROR_START_STOPPED)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "\r \rCannot start process: %s\n> ", *err)
+				break
+			}
 			this.internalOutput <- STARTING
 			if err := this.StartProcess(); err != nil {
 				this.internalOutput <- STARTING_ERROR
@@ -437,19 +437,27 @@ func (this *ProcessRunner) Run() {
 			}
 
 		case input.Stop:
-			this.internalOutput <- STOPPING
-			if err := this.StopProcess(); err != nil {
-				this.internalOutput <- STOPPING_ERROR
-				this.commandErrors <- err
+			var err *string
+			if this.State.failedToStart.Get() {
+				err = utils.New(ERROR_PREVIOUSLY_FAILED)
+			} else if this.State.startTime.Get() == nil || this.State.command.Get().Process == nil {
+				err = utils.New(ERROR_STOP_STOPPED)
 			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "\r \rCannot stop process: %s\n> ", *err)
+				break
+			}
+			this.internalOutput <- STOPPING
+			this.StopProcess()
 
 		case input.Restart:
+			if this.State.failedToStart.Get() {
+				fmt.Fprintf(os.Stderr, "\r \rCannot restart process: %s\n> ", ERROR_PREVIOUSLY_FAILED)
+				break
+			}
 			this.internalOutput <- RESTARTING
 			this.State.isRestarting.Set(true)
-			if err := this.RestartProcess(); err != nil {
-				this.internalOutput <- RESTARTING_ERROR
-				this.Output <- output.NewRestartFailure(err.Error())
-			}
+			this.RestartProcess()
 
 		case input.Shutdown:
 			return

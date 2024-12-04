@@ -257,6 +257,5 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 
 	*this = Task(task)
 
-	fmt.Println(this.Restart)
 	return nil
 }
