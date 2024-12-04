@@ -1,6 +1,6 @@
 {
   "$schema": "../../tmconfig.schema.json",
-  "logDir": "./logs",
+  "logDir": "./log",
   "tasks": [
     {
       "name": "task-00",
@@ -20,19 +20,19 @@
       "name": "task-01",
       "command": "env",
       "environment": {
-        "PATH": "/usr/bin",
+        "PATH": "$PATH",
         "THIS": "IS",
         "IS": "THIS",
         "AWESOME": "AWESOME"
       },
-      "instances": 4,
+      "instances": 5,
       "stderr": "ignore",
       "restart": "never"
     },
     {
       "name": "task-02",
-      "command": "bash",
-      "arguments": ["-c", "trap 'echo exit clean' EXIT; env; sleep infinity"],
+      "command": "sleep",
+      "arguments": ["infinity"],
       "instances": 10,
       "environment": {
         "PATH": "$PATH"

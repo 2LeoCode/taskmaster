@@ -68,7 +68,7 @@ func NewMasterRunner(manager config.Manager, in <-chan input.Message, out chan<-
 		masterClosed:       new(sync.WaitGroup),
 		shouldCloseOutput:  atom.NewAtom(true),
 		globalOutputPipes:  make([]chan taskOutput.Message, len(taskOutputs)),
-		reloadSignal:       make(chan os.Signal),
+		reloadSignal:       make(chan os.Signal, 16),
 	}
 	if globalLogFile, err := os.OpenFile(fmt.Sprintf("%s/taskmaster_%s.log", conf.LogDir, time.Now().Format("060102_150405")), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666); err != nil {
 		return nil, err

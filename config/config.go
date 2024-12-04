@@ -206,7 +206,7 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 
 	restartValues := []string{"always", "never", "on-failure", "unless-stopped"}
 	stopSignalValues := []string{"SIGINT", "SIGQUIT", "SIGTERM", "SIGUSR1", "SIGUSR2", "SIGSTOP", "SIGTSTP"}
-	stdioValues := []string{"ignore", "inherit", "redirect"}
+	stdioValues := []string{"ignore", "redirect"}
 
 	switch {
 	case task.Name == nil:
@@ -256,5 +256,7 @@ func (this *Task) UnmarshalJSON(data []byte) error {
 	}
 
 	*this = Task(task)
+
+	fmt.Println(this.Restart)
 	return nil
 }
