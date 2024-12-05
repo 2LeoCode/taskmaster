@@ -138,13 +138,16 @@ type ProcessRunner struct {
 
 	internalOutput chan ProcessResponse
 	commandErrors  chan error
+	stopSignal     chan StopSignal
 }
 
 func (this *ProcessRunner) close() {
 	this.State.hasBeenShutdown.Set(true)
 
-	this.StopProcess()
-	this.State.command.Get().Wait()
+	if !this.State.failedToStart.Get() {
+		this.StopProcess()
+		<-this.stopSignal
+	}
 	close(this.Output)
 	this.StdoutLogFile.Close()
 	this.StderrLogFile.Close()
@@ -229,6 +232,7 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		State:          NewProcessState(),
 		internalOutput: make(chan ProcessResponse),
 		commandErrors:  make(chan error),
+		stopSignal:     make(chan StopSignal),
 	}
 	if stdoutLogFile, err := getLogFile(STDOUT, taskConf.Stdout, conf, taskId, id); err != nil {
 		return nil, err
@@ -277,7 +281,7 @@ func (this *ProcessRunner) StartProcess() error {
 			} else {
 				this.internalOutput <- STOPPED_UNSUCCESSFULLY
 			}
-			if !this.State.hasBeenShutdown.Get() && !this.State.isRestarting.Get() {
+			if !this.State.isRestarting.Get() && !this.State.hasBeenShutdown.Get() {
 				if this.State.userStartTime.Get() == nil {
 					this.State.stoppedEarly.Set(true)
 					if hasAttempts && this.TaskConfig.Restart != "never" {
@@ -291,6 +295,7 @@ func (this *ProcessRunner) StartProcess() error {
 				}
 			}
 			this.State.isRestarting.Set(false)
+			this.stopSignal <- StopSignal{}
 		}()
 
 		go func() {
@@ -322,7 +327,7 @@ func (this *ProcessRunner) StopProcess() {
 func (this *ProcessRunner) RestartProcess() {
 	this.StopProcess()
 	go func() {
-		this.State.command.Get().Wait()
+		<-this.stopSignal
 		this.State.Reset()
 		if err := this.StartProcess(); err != nil {
 			this.internalOutput <- RESTARTING_ERROR
@@ -449,6 +454,7 @@ func (this *ProcessRunner) Run() {
 			}
 			this.internalOutput <- STOPPING
 			this.StopProcess()
+			go func() { <-this.stopSignal }()
 
 		case input.Restart:
 			if this.State.failedToStart.Get() {
