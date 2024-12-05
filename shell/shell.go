@@ -2,6 +2,7 @@ package shell
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"taskmaster/messages/helpers"
 	"taskmaster/messages/master/input"
 	"taskmaster/messages/master/output"
+	"taskmaster/terminal"
 	"taskmaster/utils"
 )
 
@@ -28,13 +30,16 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 
 	shouldStop := atom.NewAtom(false)
 
+	terminal.DisableEchoMode()
+	terminal.DisableCannonicalMode()
 	defer func() {
 		shouldStop.Set(true)
 		close(out)
+		terminal.EnableEchoMode()
+		terminal.EnableCannonicalMode()
 	}()
 	commands := make(chan []string)
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Split(bufio.ScanLines)
+	reader := bufio.NewReader(os.Stdin)
 
 	go func() {
 		executeCommand := func(command []string) {
@@ -45,18 +50,30 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 
 		for !shouldStop.Get() {
 			fmt.Print("> ")
+			cmd := ""
+			cursor := 0
+
+			handleKeystroke := func(code uint32) bool {
+				// TODO: Handle keystrokes
+				return true
+			}
+
 			reloadInProgress.Wait()
-			if ok := scanner.Scan(); !ok {
+			var input []byte
+			if _, err := reader.Read(input); err != nil {
 				executeCommand([]string{"shutdown"})
 				return
 			}
-			cmd := scanner.Text()
-			tokens := strings.Split(cmd, " ")
-			utils.Filter(&tokens, func(_ int, token *string) bool { return len(*token) != 0 })
-			if len(tokens) == 0 {
-				continue
+			keyCode := binary.NativeEndian.Uint32(input)
+			if handleKeystroke(keyCode) {
+				tokens := strings.Split(cmd, " ")
+				utils.Filter(&tokens, func(_ int, token *string) bool { return len(*token) != 0 })
+				if len(tokens) == 0 {
+					continue
+				}
+				executeCommand(tokens)
 			}
-			executeCommand(tokens)
+			fmt.Printf("\033[s\033[2K> %s\033[u", cmd)
 		}
 	}()
 
