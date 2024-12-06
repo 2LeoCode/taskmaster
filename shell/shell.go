@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,11 +61,11 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			commandOk.Wait()
 		}
 
-		for !shouldStop.Get() {
-			history := make([]string, 16)
-			historySelection := 0
+		history := []string{}
+		cmdBackup := ""
+		historySelection := 0
 
-			cmdBackup := ""
+		for !shouldStop.Get() {
 
 			handleKeystroke := func(code uint32) (tokens []string, execute bool) {
 				commandLock.Lock()
@@ -134,11 +133,10 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			reloadInProgress.Wait()
 			DisplayCommand()
 			input := make([]byte, 4)
-			if n, err := io.ReadAtLeast(reader, input, 1); err != nil {
+			if _, err := io.ReadAtLeast(reader, input, 1); err != nil {
 				executeCommand([]string{"shutdown"})
 				return
 			} else {
-				copy(input[n:], slices.Repeat([]byte{0}, 4-n))
 				keyCode := binary.NativeEndian.Uint32(input)
 				if tokens, ok := handleKeystroke(keyCode); ok {
 					executeCommand(tokens)
