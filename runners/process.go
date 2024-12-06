@@ -445,7 +445,7 @@ func (this *ProcessRunner) Run() {
 			var err *string
 			if this.State.failedToStart.Get() {
 				err = utils.New(ERROR_PREVIOUSLY_FAILED)
-			} else if this.State.startTime.Get() == nil {
+			} else if this.State.startTime.Get() == nil || this.State.exitStatus.Get != nil {
 				err = utils.New(ERROR_STOP_STOPPED)
 			}
 			if err != nil {
