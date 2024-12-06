@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 	"taskmaster/messages/master/output"
 	"taskmaster/terminal"
 	"taskmaster/utils"
+	"unicode"
 )
 
 const HELP_MESSAGE = `help: show this help help message
@@ -23,6 +26,17 @@ stop <id>: stop a program
 restart <id>: restart a program
 reload: reload configuration file (restart programs only if needed)
 shutdown: stop all processes and taskmaster`
+
+type SpecialKey uint
+
+const (
+	KEY_BACKSPACE SpecialKey = 127
+	KEY_ENTER                = 10
+	KEY_UP                   = 4283163
+	KEY_LEFT                 = 4479771
+	KEY_RIGHT                = 4414235
+	KEY_DOWN                 = 4348699
+)
 
 func StartShell(in <-chan output.Message, out chan<- input.Message) {
 	var reloadInProgress sync.WaitGroup
@@ -49,31 +63,87 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 		}
 
 		for !shouldStop.Get() {
-			fmt.Print("> ")
-			cmd := ""
-			cursor := 0
+			history := make([]string, 16)
+			historySelection := 0
 
-			handleKeystroke := func(code uint32) bool {
-				// TODO: Handle keystrokes
-				return true
+			cmdBackup := ""
+
+			handleKeystroke := func(code uint32) (tokens []string, execute bool) {
+				commandLock.Lock()
+				defer commandLock.Unlock()
+				if unicode.IsPrint(rune(code)) {
+					command = command[:cursor] + string(code) + command[cursor:]
+					cursor++
+					return nil, false
+				}
+				switch SpecialKey(code) {
+				case KEY_BACKSPACE:
+					if len(command) != 0 && cursor != 0 {
+						command = command[:cursor-1] + command[cursor:]
+						cursor--
+					}
+
+				case KEY_ENTER:
+					tokens := strings.Split(command, " ")
+					utils.Filter(&tokens, func(_ int, token *string) bool { return len(*token) != 0 })
+					if len(tokens) != 0 {
+						command = strings.Trim(command, " \t\r\f\v\n")
+						if len(history) == 0 || history[len(history)-1] != command {
+							history = append(history, command)
+						}
+						command = ""
+						cmdBackup = ""
+						historySelection = 0
+						cursor = 0
+						fmt.Print("\n")
+						return tokens, true
+					}
+					return nil, false
+				case KEY_UP:
+					if historySelection == 0 {
+						cmdBackup = command
+					}
+					if historySelection < len(history) {
+						historySelection++
+						command = history[len(history)-historySelection]
+						cursor = len(command)
+					}
+				case KEY_DOWN:
+					if historySelection == 0 {
+						break
+					}
+					historySelection--
+					if historySelection == 0 {
+						command = cmdBackup
+					} else {
+						command = history[len(history)-historySelection]
+					}
+					cursor = len(command)
+				case KEY_LEFT:
+					if cursor != 0 {
+						cursor--
+					}
+				case KEY_RIGHT:
+					if cursor != len(command) {
+						cursor++
+					}
+				}
+				return nil, false
 			}
 
 			reloadInProgress.Wait()
-			var input []byte
-			if _, err := reader.Read(input); err != nil {
+			DisplayCommand()
+			input := make([]byte, 4)
+			if n, err := io.ReadAtLeast(reader, input, 1); err != nil {
 				executeCommand([]string{"shutdown"})
 				return
-			}
-			keyCode := binary.NativeEndian.Uint32(input)
-			if handleKeystroke(keyCode) {
-				tokens := strings.Split(cmd, " ")
-				utils.Filter(&tokens, func(_ int, token *string) bool { return len(*token) != 0 })
-				if len(tokens) == 0 {
-					continue
+			} else {
+				copy(input[n:], slices.Repeat([]byte{0}, 4-n))
+				keyCode := binary.NativeEndian.Uint32(input)
+				if tokens, ok := handleKeystroke(keyCode); ok {
+					executeCommand(tokens)
 				}
-				executeCommand(tokens)
 			}
-			fmt.Printf("\033[s\033[2K> %s\033[u", cmd)
 		}
 	}()
 
@@ -142,7 +212,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			if !ok {
 				return
 			}
-			fmt.Print("\r \r")
+			fmt.Print("\033[2K\r")
 			switch res.(type) {
 			case output.Status:
 				res := res.(output.Status)
@@ -165,7 +235,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			case output.BadRequest:
 				fmt.Fprintln(os.Stderr, "Invalid request.")
 			}
-			fmt.Print("> ")
+			DisplayCommand()
 		}
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"taskmaster/config"
 	"taskmaster/messages/process/input"
 	"taskmaster/messages/process/output"
+	"taskmaster/shell"
 	"taskmaster/utils"
 )
 
@@ -403,7 +404,8 @@ func (this *ProcessRunner) Run() {
 			case STOPPED_UNSUCCESSFULLY:
 				msg += "stopped unsuccessfully"
 			}
-			fmt.Printf("\r \r%s\n> ", msg)
+			fmt.Printf("\033[2K\r%s\n", msg)
+			shell.DisplayCommand()
 			fmt.Fprintf(TaskmasterLogFile.Get(), "%s: %s\n", time.Now().Format("06/01/02 15:04:05"), msg)
 		}
 	}()
@@ -432,7 +434,8 @@ func (this *ProcessRunner) Run() {
 				err = utils.New(ERROR_START_STOPPED)
 			}
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "\r \rCannot start process: %s\n> ", *err)
+				fmt.Fprintf(os.Stderr, "\033[2K\rCannot start process: %s\n", *err)
+				shell.DisplayCommand()
 				break
 			}
 			this.internalOutput <- STARTING
@@ -449,7 +452,8 @@ func (this *ProcessRunner) Run() {
 				err = utils.New(ERROR_STOP_STOPPED)
 			}
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "\r \rCannot stop process: %s\n> ", *err)
+				fmt.Fprintf(os.Stderr, "\033[2K\rCannot stop process: %s\n", *err)
+				shell.DisplayCommand()
 				break
 			}
 			this.internalOutput <- STOPPING
@@ -458,7 +462,8 @@ func (this *ProcessRunner) Run() {
 
 		case input.Restart:
 			if this.State.failedToStart.Get() {
-				fmt.Fprintf(os.Stderr, "\r \rCannot restart process: %s\n> ", ERROR_PREVIOUSLY_FAILED)
+				fmt.Fprintf(os.Stderr, "\033[2K\rCannot restart process: %s\n", ERROR_PREVIOUSLY_FAILED)
+				shell.DisplayCommand()
 				break
 			}
 			this.internalOutput <- RESTARTING
