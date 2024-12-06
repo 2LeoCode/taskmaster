@@ -1,0 +1,69 @@
+{
+  "$schema": "./tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-success",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 0,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "touch1",
+      "command": "touch",
+      "arguments": ["file1"],
+      "permissions": 222,
+      "restartAttempts": 4,
+      "stopSignal": "SIGTERM",
+      "workingDirectory": "/tmp"
+    },
+    {
+      "name": "touch2",
+      "command": "touch",
+      "arguments": ["file2"],
+      "permissions": 7,
+      "restartAttempts": 4,
+      "stopSignal": "SIGTERM",
+      "workingDirectory": "/tmp"
+    },
+    {
+      "name": "hello-world-bis",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-success-bis",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 0,
+      "stopSignal": "SIGINT"
+    }
+  ],
+  "logDir": "./logs"
+}

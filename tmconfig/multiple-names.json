@@ -1,0 +1,96 @@
+{
+  "$schema": "./tmconfig.schema.json",
+  "tasks": [
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    },
+    {
+      "name": "hello-world-fail",
+      "command": "/usr/bin/env",
+      "environment": {
+        "HELLO": "Hello world!"
+      },
+      "startTime": 5000,
+      "stopSignal": "SIGINT"
+    }
+  ],
+  "logDir": "./logs"
+}
