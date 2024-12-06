@@ -10,6 +10,7 @@ import (
 	processOutput "taskmaster/messages/process/output"
 	"taskmaster/messages/task/input"
 	"taskmaster/messages/task/output"
+	"taskmaster/shell"
 	"taskmaster/utils"
 )
 
@@ -157,7 +158,8 @@ func (this *TaskRunner) Run() {
 		case input.StartProcess:
 			req := req.(input.StartProcess)
 			if req.ProcessId() >= uint(len(this.Processes)) {
-				fmt.Printf("\r \rTask %d failed to start process: invalid process id: %d.\n> ", this.Id, req.ProcessId())
+				fmt.Printf("\033[2K\rTask %d failed to start process: invalid process id: %d.\n", this.Id, req.ProcessId())
+				shell.DisplayCommand()
 				break
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewStart()
@@ -165,7 +167,8 @@ func (this *TaskRunner) Run() {
 		case input.StopProcess:
 			req := req.(input.StopProcess)
 			if req.ProcessId() >= uint(len(this.Processes)) {
-				fmt.Printf("\r \rTask %d failed to stop process: invalid process id: %d.\n> ", this.Id, req.ProcessId())
+				fmt.Printf("\033[2K\rTask %d failed to stop process: invalid process id: %d.\n", this.Id, req.ProcessId())
+				shell.DisplayCommand()
 				break
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewStop()
@@ -173,7 +176,8 @@ func (this *TaskRunner) Run() {
 		case input.RestartProcess:
 			req := req.(input.RestartProcess)
 			if req.ProcessId() >= uint(len(this.Processes)) {
-				fmt.Printf("\r \rTask %d failed to restart process: invalid process id: %d.\n> ", this.Id, req.ProcessId())
+				fmt.Printf("\033[2K\rTask %d failed to restart process: invalid process id: %d.\n", this.Id, req.ProcessId())
+				shell.DisplayCommand()
 				break
 			}
 			this.processInputs[req.ProcessId()] <- processInput.NewRestart()
