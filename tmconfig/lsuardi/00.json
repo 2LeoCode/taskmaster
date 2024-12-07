@@ -44,6 +44,16 @@
     {
       "name": "task-03",
       "command": "notexist"
+    },
+    {
+      "name": "task-04",
+      "command": "bash",
+      "arguments": ["-c", "sleep 1; echo Hello"],
+      "environment": {
+        "PATH": "$PATH"
+      },
+      "startTime": 500,
+      "startAtLaunch": false
     }
   ]
 }
