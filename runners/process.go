@@ -145,7 +145,7 @@ type ProcessRunner struct {
 func (this *ProcessRunner) close() {
 	this.State.hasBeenShutdown.Set(true)
 
-	if !this.State.failedToStart.Get() {
+	if !this.State.failedToStart.Get() && this.State.command.Get() != nil {
 		this.StopProcess()
 		<-this.stopSignal
 	}

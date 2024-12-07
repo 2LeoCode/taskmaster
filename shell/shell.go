@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,8 +30,9 @@ shutdown: stop all processes and taskmaster`
 type SpecialKey uint
 
 const (
-	KEY_BACKSPACE SpecialKey = 127
+	KEY_CTRL_D    SpecialKey = 4
 	KEY_ENTER                = 10
+	KEY_BACKSPACE            = 127
 	KEY_UP                   = 4283163
 	KEY_LEFT                 = 4479771
 	KEY_RIGHT                = 4414235
@@ -126,6 +128,8 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 					if cursor != len(command) {
 						cursor++
 					}
+				case KEY_CTRL_D:
+					return []string{"shutdown"}, true
 				}
 				return nil, false
 			}
@@ -134,6 +138,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			DisplayCommand()
 			input := make([]byte, 4)
 			if _, err := io.ReadAtLeast(reader, input, 1); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 				executeCommand([]string{"shutdown"})
 				return
 			} else {
