@@ -83,10 +83,10 @@ func (this *processState) Reset() {
 		command:         atom.NewAtom[*exec.Cmd](nil),
 		failedToStart:   atom.NewAtom(false),
 		hasBeenKilled:   atom.NewAtom(false),
+		stoppedEarly:    this.stoppedEarly,
 		isRestarting:    this.isRestarting,
 		startRetries:    this.startRetries,
 		hasBeenShutdown: this.hasBeenShutdown,
-		stoppedEarly:    this.stoppedEarly,
 	}
 }
 
@@ -140,7 +140,10 @@ type ProcessRunner struct {
 	internalOutput chan ProcessResponse
 	commandErrors  chan error
 	stopSignal     chan StopSignal
+	startInterrupt chan startInterrupt
 }
+
+type startInterrupt struct{}
 
 func (this *ProcessRunner) close() {
 	this.State.hasBeenShutdown.Set(true)
@@ -234,6 +237,7 @@ func newProcessRunner(manager config.Manager, taskId, id uint, input <-chan inpu
 		internalOutput: make(chan ProcessResponse),
 		commandErrors:  make(chan error),
 		stopSignal:     make(chan StopSignal),
+		startInterrupt: make(chan startInterrupt),
 	}
 	if stdoutLogFile, err := getLogFile(STDOUT, taskConf.Stdout, conf, taskId, id); err != nil {
 		return nil, err
@@ -264,6 +268,11 @@ func (this *ProcessRunner) StartProcess() error {
 		go func() {
 			retry := func() {
 				this.State.startRetries.Update(func(old uint) uint { return old + 1 })
+				// Send to startInterruptEvent only if a goroutine is listening to the channel
+				select {
+				case this.startInterrupt <- startInterrupt{}:
+				default:
+				}
 				this.State.Reset()
 				this.internalOutput <- RETRYING
 				this.StartProcess()
@@ -287,6 +296,8 @@ func (this *ProcessRunner) StartProcess() error {
 					this.State.stoppedEarly.Set(true)
 					if hasAttempts && this.TaskConfig.Restart != "never" {
 						retry()
+					} else {
+						this.startInterrupt <- startInterrupt{}
 					}
 				} else if hasAttempts && (this.TaskConfig.Restart == "always" ||
 					(this.TaskConfig.Restart == "unless-stopped" &&
@@ -294,17 +305,25 @@ func (this *ProcessRunner) StartProcess() error {
 						exitCode != this.TaskConfig.ExpectedExitStatus)) {
 					retry()
 				}
+			} else if this.State.userStartTime.Get() == nil {
+				select {
+				case this.startInterrupt <- startInterrupt{}:
+				default:
+				}
 			}
 			this.State.isRestarting.Set(false)
 			this.stopSignal <- StopSignal{}
 		}()
 
 		go func() {
-			time.Sleep(time.Duration(this.TaskConfig.StartTime) * time.Millisecond)
-			this.State.userStartTime.Set(utils.New(time.Now()))
-			if this.State.exitStatus.Get() == nil {
-				this.State.stoppedEarly.Set(false)
-				this.internalOutput <- STARTED
+			select {
+			case <-this.startInterrupt:
+			case <-time.After(time.Duration(this.TaskConfig.StartTime) * time.Millisecond):
+				if this.State.userStartTime.Get() == nil {
+					this.State.stoppedEarly.Set(false)
+					this.State.userStartTime.Set(utils.New(time.Now()))
+					this.internalOutput <- STARTED
+				}
 			}
 		}()
 	}
@@ -312,6 +331,10 @@ func (this *ProcessRunner) StartProcess() error {
 }
 
 func (this *ProcessRunner) StopProcess() {
+	select {
+	case this.startInterrupt <- startInterrupt{}:
+	default:
+	}
 	if process := this.State.command.Get().Process; process != nil {
 		this.State.userStopTime.Set(utils.New(time.Now()))
 		process.Signal(SIGNAL_TABLE[this.TaskConfig.StopSignal])
@@ -367,7 +390,7 @@ func (this *ProcessRunner) StatusProcess() {
 	}
 	retries := this.State.startRetries.Get()
 	if this.TaskConfig.RestartAttempts != 0 && retries != 0 {
-		status += fmt.Sprintf(" [Restarted %d/%d]", retries, this.TaskConfig.RestartAttempts)
+		status += fmt.Sprintf(" [Retried %d/%d]", retries, this.TaskConfig.RestartAttempts)
 	}
 	if this.State.stoppedEarly.Get() {
 		status += " (stopped early)"

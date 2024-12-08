@@ -1,15 +1,68 @@
 {
   "$schema": "./tmconfig.schema.json",
+  "logDir": "/tmp/tm-logs",
   "tasks": [
     {
-      "name": "hello-world",
-      "command": "/usr/bin/env",
+      "name": "task-00",
+      "command": "bash",
+      "arguments": ["-c", "sleep 1;>&2 echo $STDERR; echo $STDOUT; sleep 1"],
       "environment": {
-        "HELLO": "Hello world!"
+        "PATH": "/usr/bin",
+        "STDOUT": "stdout",
+        "STDERR": "stderr"
       },
-      "startTime": 5000,
-      "stopSignal": "SIGINT"
+      "restart": "always",
+      "instances": 5,
+      "restartAttempts": 2,
+      "startTime": 1000
+    },
+    {
+      "name": "task-01",
+      "command": "env",
+      "environment": {
+        "PATH": "$PATH",
+        "THIS": "IS",
+        "IS": "THIS",
+        "AWESOME": "AWESOME"
+      },
+      "instances": 5,
+      "stderr": "ignore",
+      "restart": "never"
+    },
+    {
+      "name": "task-02",
+      "command": "sleep",
+      "arguments": ["infinity"],
+      "instances": 10,
+      "environment": {
+        "PATH": "$PATH"
+      },
+      "startTime": 3000,
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "task-03",
+      "command": "notexist"
+    },
+    {
+      "name": "task-04",
+      "command": "bash",
+      "arguments": ["-c", "sleep 1; echo Hello"],
+      "environment": {
+        "PATH": "$PATH"
+      },
+      "startTime": 500,
+      "startAtLaunch": false
+    },
+    {
+      "name": "task-05",
+      "command": "sleep",
+      "arguments": ["1"],
+      "environment": {
+        "PATH": "${PATH}"
+      },
+      "startTime": 2000
     }
-  ],
-  "logDir": "./logs"
+  ]
 }

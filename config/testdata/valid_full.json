@@ -13,8 +13,8 @@
       "startTime": 42,
       "stopTime": 42,
       "stopSignal": "SIGTERM",
-      "stdout": "inherit",
-      "stderr": "inherit",
+      "stdout": "redirect",
+      "stderr": "ignore",
       "environment": {
         "WELCOME": "Hello world!"
       },

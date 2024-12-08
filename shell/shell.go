@@ -72,7 +72,7 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 				commandLock.Lock()
 				defer commandLock.Unlock()
 				if unicode.IsPrint(rune(code)) {
-					command = command[:cursor] + string(code) + command[cursor:]
+					command = command[:cursor] + string(rune(code)) + command[cursor:]
 					cursor++
 					return nil, false
 				}
@@ -137,7 +137,6 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 			DisplayCommand()
 			input := make([]byte, 4)
 			if _, err := io.ReadAtLeast(reader, input, 1); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 				executeCommand([]string{"shutdown"})
 				return
 			} else {
