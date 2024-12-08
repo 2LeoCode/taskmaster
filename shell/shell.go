@@ -68,14 +68,9 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 
 		for !shouldStop.Get() {
 
-			handleKeystroke := func(code uint32) (tokens []string, execute bool) {
-				commandLock.Lock()
-				defer commandLock.Unlock()
-				if unicode.IsPrint(rune(code)) {
-					command = command[:cursor] + string(rune(code)) + command[cursor:]
-					cursor++
-					return nil, false
-				}
+			var handleKeystroke func(input []byte) (tokens []string, execute bool)
+			handleKeystroke = func(input []byte) (tokens []string, execute bool) {
+				code := binary.NativeEndian.Uint32(input)
 				switch SpecialKey(code) {
 				case KEY_BACKSPACE:
 					if len(command) != 0 && cursor != 0 {
@@ -129,6 +124,12 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 					}
 				case KEY_CTRL_D:
 					return []string{"shutdown"}, true
+				default:
+					if unicode.IsPrint(rune(input[0])) {
+						command = command[:cursor] + string(rune(input[0])) + command[cursor:]
+						cursor++
+						return handleKeystroke(append(input[1:], 0))
+					}
 				}
 				return nil, false
 			}
@@ -140,8 +141,10 @@ func StartShell(in <-chan output.Message, out chan<- input.Message) {
 				executeCommand([]string{"shutdown"})
 				return
 			} else {
-				keyCode := binary.NativeEndian.Uint32(input)
-				if tokens, ok := handleKeystroke(keyCode); ok {
+				commandLock.Lock()
+				tokens, ok := handleKeystroke(input)
+				commandLock.Unlock()
+				if ok {
 					executeCommand(tokens)
 				}
 			}
