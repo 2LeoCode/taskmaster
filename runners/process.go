@@ -292,7 +292,7 @@ func (this *ProcessRunner) StartProcess() error {
 				this.internalOutput <- STOPPED_UNSUCCESSFULLY
 			}
 			if !this.State.isRestarting.Get() && !this.State.hasBeenShutdown.Get() {
-				if this.State.userStartTime.Get() == nil {
+				if this.TaskConfig.StartTime != 0 && this.State.userStartTime.Get() == nil {
 					this.State.stoppedEarly.Set(true)
 					if hasAttempts && this.TaskConfig.Restart != "never" {
 						retry()

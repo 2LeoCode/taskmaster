@@ -25,7 +25,7 @@
         "IS": "THIS",
         "AWESOME": "AWESOME"
       },
-      "instances": 5,
+      "instances": 50,
       "stderr": "ignore",
       "restart": "never"
     },
